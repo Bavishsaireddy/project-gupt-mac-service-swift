@@ -10,11 +10,17 @@ import SwiftUI
 @main
 struct RemoteDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    // Inject controllers as environment objects or state
+    @StateObject private var hostController = HostController()
+    @StateObject private var clientController = ClientController()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 800, minHeight: 600)
+                .environmentObject(hostController)
+                .environmentObject(clientController)
+                .frame(minWidth: 900, minHeight: 700)
         }
         .windowStyle(.titleBar)
         .commands {
@@ -36,6 +42,8 @@ struct RemoteDesktopApp: App {
 /// Main content view with mode selection
 struct ContentView: View {
     @State private var selectedMode: AppMode = .selection
+    @EnvironmentObject var hostController: HostController
+    @EnvironmentObject var clientController: ClientController
 
     enum AppMode {
         case selection
@@ -50,103 +58,130 @@ struct ContentView: View {
                 ModeSelectionView(selectedMode: $selectedMode)
 
             case .host:
-                HostMainView(onBack: {
+                HostContainerView(onBack: {
                     selectedMode = .selection
                 })
 
             case .client:
-                ClientMainView(onBack: {
+                ClientContainerView(onBack: {
                     selectedMode = .selection
                 })
             }
         }
+        .animation(.easeInOut, value: selectedMode)
     }
 }
 
-/// Mode selection view
+// MARK: - Container Views
+
+struct HostContainerView: View {
+    let onBack: () -> Void
+    @EnvironmentObject var hostController: HostController
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                    Text("Back to Selection")
+                }
+                .buttonStyle(.plain)
+                .padding()
+                
+                Spacer()
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+            
+            HostView(controller: hostController)
+        }
+    }
+}
+
+struct ClientContainerView: View {
+    let onBack: () -> Void
+    @EnvironmentObject var clientController: ClientController
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if !clientController.isConnected {
+                HStack {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                        Text("Back to Selection")
+                    }
+                    .buttonStyle(.plain)
+                    .padding()
+                    
+                    Spacer()
+                }
+                .background(Color(nsColor: .windowBackgroundColor))
+            }
+            
+            ClientView(controller: clientController)
+        }
+    }
+}
+
+// MARK: - Mode Selection View
+
 struct ModeSelectionView: View {
     @Binding var selectedMode: ContentView.AppMode
 
     var body: some View {
-        VStack(spacing: 40) {
-            Text("RemoteDesktop")
-                .font(.system(size: 48, weight: .bold))
+        VStack(spacing: 60) {
+            VStack(spacing: 10) {
+                Text("RemoteDesktop")
+                    .font(.system(size: 56, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
 
-            Text("Choose a mode to get started")
-                .font(.title3)
-                .foregroundColor(.secondary)
+                Text("Professional bridge for your workspaces")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
 
-            HStack(spacing: 60) {
-                // Host Mode Button
+            HStack(spacing: 50) {
                 ModeButton(
                     title: "Host",
-                    subtitle: "Share your screen",
+                    subtitle: "Share this Mac's screen",
                     icon: "desktopcomputer",
                     color: .blue
                 ) {
                     selectedMode = .host
                 }
 
-                // Client Mode Button
                 ModeButton(
                     title: "Client",
-                    subtitle: "Connect to a remote screen",
+                    subtitle: "Control a remote Mac",
                     icon: "rectangle.connected.to.line.below",
-                    color: .green
+                    color: .purple
                 ) {
                     selectedMode = .client
                 }
             }
 
             Spacer()
-                .frame(height: 40)
-
-            VStack(spacing: 8) {
-                Text("Requires Permissions:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 20) {
-                    PermissionStatusBadge(
-                        title: "Screen Recording",
-                        isGranted: checkScreenRecordingPermission()
-                    )
-
-                    PermissionStatusBadge(
-                        title: "Accessibility",
-                        isGranted: checkAccessibilityPermission()
-                    )
-                }
-
-                Button("Grant Permissions") {
-                    openSystemPreferences()
-                }
-                .buttonStyle(.link)
+                .frame(height: 20)
+            
+            // Permission Quick Status
+            HStack(spacing: 30) {
+                PermissionBadge(title: "Capture", isGranted: CGPreflightScreenCaptureAccess())
+                PermissionBadge(title: "Control", isGranted: AXIsProcessTrusted())
             }
+            .padding(.bottom, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(60)
     }
-
-    private func checkScreenRecordingPermission() -> Bool {
-        if #available(macOS 12.3, *) {
-            return CGPreflightScreenCaptureAccess()
-        }
-        return false
-    }
-
-    private func checkAccessibilityPermission() -> Bool {
-        return AXIsProcessTrusted()
-    }
-
-    private func openSystemPreferences() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
-    }
 }
 
-/// Mode button component
+// MARK: - Shared Components
+
 struct ModeButton: View {
     let title: String
     let subtitle: String
@@ -158,30 +193,41 @@ struct ModeButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 16) {
-                Image(systemName: icon)
-                    .font(.system(size: 60))
-                    .foregroundColor(color)
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.1))
+                        .frame(width: 100, height: 100)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 44, weight: .medium))
+                        .foregroundColor(color)
+                }
 
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     Text(title)
-                        .font(.title)
-                        .fontWeight(.semibold)
+                        .font(.title2)
+                        .fontWeight(.bold)
 
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
             }
-            .frame(width: 250, height: 200)
+            .frame(width: 280, height: 280)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 24)
                     .fill(Color(nsColor: .controlBackgroundColor))
-                    .shadow(color: isHovered ? color.opacity(0.3) : Color.black.opacity(0.1),
-                           radius: isHovered ? 20 : 10)
+                    .shadow(color: isHovered ? color.opacity(0.2) : Color.black.opacity(0.05),
+                           radius: isHovered ? 30 : 15, x: 0, y: 10)
             )
-            .scaleEffect(isHovered ? 1.05 : 1.0)
-            .animation(.spring(response: 0.3), value: isHovered)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(isHovered ? color.opacity(0.5) : Color.clear, lineWidth: 2)
+            )
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -190,200 +236,35 @@ struct ModeButton: View {
     }
 }
 
-/// Permission status badge
-struct PermissionStatusBadge: View {
+struct PermissionBadge: View {
     let title: String
     let isGranted: Bool
-
+    
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(isGranted ? .green : .red)
-                .font(.caption)
-
+            Circle()
+                .fill(isGranted ? Color.green : Color.orange)
+                .frame(width: 8, height: 8)
+            
             Text(title)
                 .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
+        .background(Capsule().fill(Color.secondary.opacity(0.1)))
     }
 }
 
-/// Placeholder settings view
-struct SettingsView: View {
-    @AppStorage("defaultPort") private var defaultPort = 5900
-    @AppStorage("autoStartHost") private var autoStartHost = false
+// MARK: - AppDelegate
 
-    var body: some View {
-        Form {
-            Section("Network") {
-                TextField("Default Port", value: $defaultPort, format: .number)
-                    .frame(width: 200)
-            }
-
-            Section("Host") {
-                Toggle("Auto-start host mode", isOn: $autoStartHost)
-            }
-
-            Section("About") {
-                Text("RemoteDesktop v1.0")
-                Text("High-performance remote desktop for macOS")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding()
-        .frame(width: 400)
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // App-wide initialization if needed
     }
-}
-
-// MARK: - Placeholder Views (to be implemented)
-
-struct HostMainView: View {
-    let onBack: () -> Void
-    @State private var isRunning = false
-
-    var body: some View {
-        VStack {
-            HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-            }
-            .padding()
-
-            Spacer()
-
-            VStack(spacing: 20) {
-                Text("Host Mode")
-                    .font(.largeTitle)
-
-                if isRunning {
-                    VStack(spacing: 12) {
-                        Text("Server Running")
-                            .font(.title2)
-                            .foregroundColor(.green)
-
-                        Text("IP Address: \(getLocalIPAddress())")
-                            .font(.title3)
-                            .monospaced()
-
-                        Text("Port: 5900")
-                            .font(.title3)
-                            .monospaced()
-
-                        Text("Share this information with clients to connect")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.green.opacity(0.1))
-                    )
-                }
-
-                Button(isRunning ? "Stop Server" : "Start Server") {
-                    isRunning.toggle()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(isRunning ? .red : .blue)
-                .controlSize(.large)
-            }
-
-            Spacer()
-        }
-    }
-
-    private func getLocalIPAddress() -> String {
-        let addresses = NetworkListener.getLocalIPAddresses()
-        return addresses.first(where: { !$0.contains(":") }) ?? "Unknown"
-    }
-}
-
-struct ClientMainView: View {
-    let onBack: () -> Void
-    @State private var hostIP = ""
-    @State private var hostPort = "5900"
-    @State private var isConnected = false
-
-    var body: some View {
-        VStack {
-            HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-            }
-            .padding()
-
-            Spacer()
-
-            VStack(spacing: 20) {
-                Text("Client Mode")
-                    .font(.largeTitle)
-
-                if !isConnected {
-                    VStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Host IP Address")
-                                .font(.headline)
-                            TextField("192.168.1.100", text: $hostIP)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 300)
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Port")
-                                .font(.headline)
-                            TextField("5900", text: $hostPort)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 300)
-                        }
-
-                        Button("Connect") {
-                            isConnected = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(hostIP.isEmpty)
-                    }
-                    .padding()
-                } else {
-                    VStack(spacing: 12) {
-                        Text("Connected")
-                            .font(.title2)
-                            .foregroundColor(.green)
-
-                        Rectangle()
-                            .fill(Color.black)
-                            .frame(height: 400)
-                            .overlay(
-                                Text("Remote Desktop Display\n(To be implemented)")
-                                    .foregroundColor(.white)
-                            )
-
-                        Button("Disconnect") {
-                            isConnected = false
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                    }
-                }
-            }
-
-            Spacer()
-        }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
     }
 }

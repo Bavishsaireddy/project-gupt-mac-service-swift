@@ -1,0 +1,68 @@
+//
+//  FrameReceiver.swift
+//  RemoteDesktop
+//
+//  Handles incoming video frame packets and passes them to the jitter buffer/decoder
+//
+
+import Foundation
+import os.log
+
+/// Delegate for frame receiver events
+protocol FrameReceiverDelegate: AnyObject {
+    func frameReceiver(_ receiver: FrameReceiver, didReceiveFrameData data: Data, isKeyframe: Bool, sequence: UInt32)
+}
+
+/// Manages incoming video frames from the network
+class FrameReceiver {
+    private let connection: NetworkConnection
+    private let logger = Logger(subsystem: "com.remotedesktop", category: "FrameReceiver")
+    
+    weak var delegate: FrameReceiverDelegate?
+    
+    private var lastReceivedSequence: UInt32 = 0
+    private let queue = DispatchQueue(label: "com.remotedesktop.receiver", qos: .userInteractive)
+    
+    init(connection: NetworkConnection) {
+        self.connection = connection
+    }
+    
+    /// Start receiving video frames
+    func start() {
+        // Subscribe to messages from the connection
+        // Note: The actual subscription mechanism should be in NetworkConnection.
+        // For now, I'll assume the ClientController will bridge the two.
+        logger.info("FrameReceiver started")
+    }
+    
+    /// Process a received video frame message
+    /// - Parameter message: The deserialized VideoFrameMessage payload
+    func processMessage(_ message: VideoFrameMessage) {
+        queue.async {
+            // Sequence number check (simple for now)
+            if message.frameSequence <= self.lastReceivedSequence {
+                self.logger.warning("Dropped out-of-order/duplicate frame #\(message.frameSequence)")
+                return
+            }
+            
+            self.lastReceivedSequence = message.frameSequence
+            
+            // Deliver to delegate (which will pass it to the jitter buffer or decoder)
+            self.delegate?.frameReceiver(
+                self,
+                didReceiveFrameData: message.frameData,
+                isKeyframe: message.isKeyframe,
+                sequence: message.frameSequence
+            )
+            
+            self.logger.debug("Received frame #\(message.frameSequence) (\(message.frameData.count) bytes)")
+        }
+    }
+    
+    /// Reset receiver state (e.g. on new session)
+    func reset() {
+        queue.async {
+            self.lastReceivedSequence = 0
+        }
+    }
+}
