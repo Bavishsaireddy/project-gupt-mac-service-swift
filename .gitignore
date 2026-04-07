@@ -1,0 +1,315 @@
+# macOS Remote Desktop - Git Ignore File
+
+# ============================================
+# AI / Development Tools
+# ============================================
+
+## Claude Code settings and cache
+.claude/
+
+# ============================================
+# Xcode
+# ============================================
+
+## Build generated
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+## Xcode Patch
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+/*.gcno
+
+## Xcode 8 and earlier
+*.xcscmblueprint
+*.xccheckout
+
+# ============================================
+# Swift Package Manager
+# ============================================
+
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj
+
+# ============================================
+# CocoaPods
+# ============================================
+
+Pods/
+*.xcworkspace
+!default.xcworkspace
+Podfile.lock
+
+# ============================================
+# Carthage
+# ============================================
+
+Carthage/Build/
+Carthage/Checkouts/
+
+# ============================================
+# Swift / Obj-C
+# ============================================
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+## Swift generated
+*.generated.swift
+
+## Obj-C/Swift specific
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ============================================
+# fastlane
+# ============================================
+
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+fastlane/README.md
+
+# ============================================
+# App Packaging
+# ============================================
+
+*.app
+*.dmg
+*.pkg
+*.mpkg
+*.ipa
+*.xcarchive
+
+# ============================================
+# Code Coverage
+# ============================================
+
+*.gcda
+*.gcno
+coverage/
+*.profraw
+*.profdata
+
+# ============================================
+# Instrumentation
+# ============================================
+
+*.trace
+*.dtps
+
+# ============================================
+# macOS System Files
+# ============================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## Thumbnails
+._*
+
+## Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+## Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# ============================================
+# IDEs
+# ============================================
+
+## AppCode
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+## Visual Studio Code
+.vscode/
+*.code-workspace
+
+## Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+## Vim
+*.swp
+*.swo
+*~
+
+## Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Debugging
+# ============================================
+
+## lldb
+.lldbinit
+
+## Instruments
+*.trace
+
+# ============================================
+# Testing
+# ============================================
+
+*.moved-aside
+*.xcuserstate
+
+# ============================================
+# Temporary Files
+# ============================================
+
+*.tmp
+*.temp
+*.log
+*.cache
+
+# ============================================
+# Project Specific
+# ============================================
+
+## Certificates and Keys (IMPORTANT: Never commit!)
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
+## Configuration files with secrets
+**/secrets.plist
+**/config.local.json
+**/*.private.*
+
+## Build artifacts
+RemoteDesktop.app/
+*.app/
+
+## Memory captures and performance data
+*.memgraph
+*.instruments
+
+## Log files
+logs/
+*.log
+
+## Development databases
+*.sqlite
+*.sqlite3
+*.db
+
+# ============================================
+# Documentation Build
+# ============================================
+
+docs/build/
+.docc-build/
+
+# ============================================
+# Dependencies (if not using package managers)
+# ============================================
+
+Frameworks/
+Vendor/
+Libraries/
+
+# ============================================
+# Backup files
+# ============================================
+
+*.backup
+*.bak
+*.old
+*.orig
+
+# ============================================
+# Archives
+# ============================================
+
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# ============================================
+# Keep These
+# ============================================
+
+# Keep empty directories
+!.gitkeep
+
+# Keep documentation
+!*.md
+!LICENSE
+
+# Keep source files
+!*.swift
+!*.h
+!*.m
+!*.metal
+
+# Keep project configuration
+!Info.plist
+!*.entitlements
+!*.xcconfig
+!Package.swift
+
+# Keep assets
+!Assets.xcassets/
+!*.xcassets/**
+
+# Keep storyboards and XIBs
+!*.storyboard
+!*.xib
+
+# Keep resource files
+!*.strings
+!*.stringsdict
+!*.json
+!*.plist
+!*.lproj/
+
+# ============================================
+# Notes
+# ============================================
+
+# This .gitignore is configured for:
+# - Swift macOS application
+# - Xcode project
+# - Swift Package Manager
+# - Security (no keys/certificates)
+# - Clean repository
