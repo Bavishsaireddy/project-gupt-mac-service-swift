@@ -6,16 +6,16 @@ echo "🧹 Cleaning up old builds..."
 rm -rf RemoteDesktop.app
 rm -rf .build
 
-echo "🔨 Building RemoteDesktop..."
-# Build the application via Swift Package Manager
-swift build -c debug
+echo "🔨 Building RemoteDesktop (Universal)..."
+# Build the application via Swift Package Manager for both Intel and Apple Silicon
+swift build -c debug --arch x86_64 --arch arm64
 
 echo "📦 Packaging into RemoteDesktop.app..."
 # Create the standard macOS App Bundle structure
 mkdir -p RemoteDesktop.app/Contents/MacOS
 
 # Copy the built executable into the bundle
-cp .build/arm64-apple-macosx/debug/RemoteDesktop RemoteDesktop.app/Contents/MacOS/
+cp .build/apple/Products/Debug/RemoteDesktop RemoteDesktop.app/Contents/MacOS/
 
 # Create a clean Info.plist so macOS correctly registers its Identifier for Permissions!
 cat <<EOF > RemoteDesktop.app/Contents/Info.plist

@@ -234,8 +234,11 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed progress.
 ### "High latency"
 → Try lower quality preset, use wired connection, reduce network congestion
 
-### Build errors
-→ Verify macOS deployment target is 13.0+, all frameworks linked
+### "App/Script cannot be opened" (Quarantine)
+If you downloaded the project as a zip, macOS may mark Files as "quarantined". Run this in the project root to clear it:
+```bash
+xattr -cr .
+```
 
 See [BUILD_GUIDE.md](BUILD_GUIDE.md) for more troubleshooting.
 
