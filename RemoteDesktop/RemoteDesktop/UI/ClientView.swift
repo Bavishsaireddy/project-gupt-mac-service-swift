@@ -13,7 +13,7 @@ struct ClientView: View {
     @ObservedObject var sessionManager = SessionManager.shared
     
     @State private var hostIP = ""
-    @State private var hostPort = "5900"
+    @State private var hostPort = "5999"
     @State private var password = ""
     @State private var isConnecting = false
     @State private var errorMessage: String?

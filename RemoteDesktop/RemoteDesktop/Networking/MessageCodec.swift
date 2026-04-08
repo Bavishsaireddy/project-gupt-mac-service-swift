@@ -63,27 +63,26 @@ actor MessageCodec {
             throw CodecError.insufficientData
         }
 
-        var offset = 0
+        var offset = data.startIndex
 
         // Read header
-        guard let typeValue = data.first,
-              let type = MessageType(rawValue: typeValue) else {
+        guard let type = MessageType(rawValue: data[offset]) else {
             throw CodecError.invalidMessageType
         }
         offset += 1
 
         let sequenceNumber = data[offset..<offset+4].withUnsafeBytes {
-            $0.load(as: UInt32.self).bigEndian
+            $0.loadUnaligned(as: UInt32.self).bigEndian
         }
         offset += 4
 
         let timestamp = data[offset..<offset+8].withUnsafeBytes {
-            $0.load(as: UInt64.self).bigEndian
+            $0.loadUnaligned(as: UInt64.self).bigEndian
         }
         offset += 8
 
         let payloadSize = data[offset..<offset+4].withUnsafeBytes {
-            $0.load(as: UInt32.self).bigEndian
+            $0.loadUnaligned(as: UInt32.self).bigEndian
         }
         offset += 4
 
@@ -120,9 +119,9 @@ actor MessageCodec {
     /// Returns array of messages and total bytes consumed
     func decodeMultiple(from data: Data) throws -> (messages: [NetworkMessage], bytesConsumed: Int) {
         var messages: [NetworkMessage] = []
-        var offset = 0
+        var offset = data.startIndex
 
-        while offset < data.count {
+        while offset < data.endIndex {
             let remainingData = data[offset...]
             guard remainingData.count >= MessageConstants.headerSize else {
                 break  // Not enough data for another message
@@ -139,34 +138,11 @@ actor MessageCodec {
             }
         }
 
-        return (messages, offset)
+        return (messages, offset - data.startIndex)
     }
 }
 
-// MARK: - Errors
-
-enum CodecError: Error, LocalizedError {
-    case payloadTooLarge
-    case insufficientData
-    case invalidMessageType
-    case encodingFailed
-    case decodingFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .payloadTooLarge:
-            return "Message payload exceeds maximum size"
-        case .insufficientData:
-            return "Insufficient data to decode message"
-        case .invalidMessageType:
-            return "Invalid message type"
-        case .encodingFailed:
-            return "Failed to encode message"
-        case .decodingFailed:
-            return "Failed to decode message"
-        }
-    }
-}
+// CodecError is defined in CodecConfiguration.swift
 
 // MARK: - Convenience Extensions
 

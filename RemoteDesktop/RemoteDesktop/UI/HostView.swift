@@ -41,7 +41,7 @@ struct HostView: View {
                 if isRunning {
                     VStack(spacing: 12) {
                         InfoRow(label: "IP Address", value: getLocalIP(), isMonospaced: true)
-                        InfoRow(label: "Port", value: "5900", isMonospaced: true)
+                        InfoRow(label: "Port", value: "5999", isMonospaced: true)
                         InfoRow(label: "Password", value: sessionManager.currentPassword, isMonospaced: true)
                         
                         Text("Share this information with the client to connect.")

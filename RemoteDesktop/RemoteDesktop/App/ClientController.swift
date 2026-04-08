@@ -8,6 +8,7 @@
 import Foundation
 import os.log
 import CoreVideo
+import CoreMedia
 
 /// Coordinates the client-side session and data pipeline
 class ClientController: NSObject, ObservableObject {
@@ -21,26 +22,24 @@ class ClientController: NSObject, ObservableObject {
     private let receiver: FrameReceiver
     private let jitterBuffer: JitterBuffer
     private let decoder: VideoDecoder
-    private let presenter: FramePresenter
+    private var presenter: FramePresenter!
     
     // MARK: - Initialization
     
     override init() {
-        // 1. Initial configuration
-        let dummyConnection = NetworkConnection(host: "localhost", port: 5900)
-        self.connection = dummyConnection
-        self.receiver = FrameReceiver(connection: dummyConnection)
+        // Will initialize correctly on connect
+        self.receiver = FrameReceiver(connection: NetworkConnection(host: "localhost", port: 5999, useTLS: false))
         self.jitterBuffer = JitterBuffer()
         self.decoder = VideoDecoder()
         
-        // 2. Setup presenter with a callback to update the UI
+        super.init()
+        
+        // Setup presenter callback after super.init() to access self safely
         self.presenter = FramePresenter(jitterBuffer: jitterBuffer) { [weak self] frame in
             DispatchQueue.main.async {
                 self?.currentFrame = frame
             }
         }
-        
-        super.init()
         
         self.receiver.delegate = self
         self.decoder.delegate = self
@@ -50,17 +49,17 @@ class ClientController: NSObject, ObservableObject {
     
     /// Connect to a remote host
     func connect(host: String, port: UInt16) async throws {
-        let newConnection = NetworkConnection(host: host, port: port)
+        let newConnection = NetworkConnection(host: host, port: port, useTLS: false)
         self.connection = newConnection
+        newConnection.delegate = self
         
-        try await newConnection.start()
-        self.isConnected = true
+        newConnection.start()
         
         // Start pipelines
         self.receiver.start()
         self.presenter.start()
         
-        logger.info("ClientController connected to \(host):\(port)")
+        logger.info("ClientController attempting to connect to \(host):\(port)")
     }
     
     /// Disconnect from the current host
@@ -84,25 +83,54 @@ extension ClientController: FrameReceiverDelegate {
         jitterBuffer.addFrame(data: data, isKeyframe: isKeyframe, sequence: sequence)
         
         // At some point (either here or via presenter), we decode it
-        decoder.decodeFrame(data, isKeyframe: isKeyframe)
+        let pts = CMTime(value: Int64(sequence), timescale: 60) // Dummy PTS for now
+        decoder.decodeWithHeaders(data: data, presentationTime: pts)
     }
 }
 
 // MARK: - VideoDecoderDelegate
 
 extension ClientController: VideoDecoderDelegate {
-    func videoDecoder(_ decoder: VideoDecoder, didDecodeFrame pixelBuffer: CVPixelBuffer) {
-        // We've got a decoded frame!
-        // In a real app, the JitterBuffer would store the decoded CVPixelBuffer
-        // for vsync-aligned presentation via the FramePresenter.
-        
+    func decoder(_ decoder: VideoDecoder, didDecodeFrame pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
         DispatchQueue.main.async {
             self.currentFrame = pixelBuffer
             LatencyMonitor.shared.reportFrameDelivered()
         }
     }
     
-    func videoDecoder(_ decoder: VideoDecoder, didEncounterError error: Error) {
+    func decoder(_ decoder: VideoDecoder, didEncounterError error: Error) {
         logger.error("Decoder error: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - NetworkConnectionDelegate
+
+extension ClientController: NetworkConnectionDelegate {
+    func connection(_ connection: NetworkConnection, didChangeState state: ConnectionState) {
+        DispatchQueue.main.async {
+            switch state {
+            case .connected:
+                self.isConnected = true
+            case .disconnected, .failed:
+                self.isConnected = false
+            default:
+                break
+            }
+        }
+    }
+    
+    func connection(_ connection: NetworkConnection, didReceiveMessage message: NetworkMessage) {
+        if message.type == .videoFrame {
+            do {
+                let frameMessage = try JSONDecoder().decode(VideoFrameMessage.self, from: message.payload)
+                receiver.processMessage(frameMessage)
+            } catch {
+                logger.error("Failed to decode video frame: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func connection(_ connection: NetworkConnection, didEncounterError error: Error) {
+        logger.error("Network connection error: \(error.localizedDescription)")
     }
 }

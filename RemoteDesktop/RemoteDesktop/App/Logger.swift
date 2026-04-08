@@ -28,7 +28,7 @@ class AppLogger {
         case .info: logger.info("\(message)")
         case .error: logger.error("\(message)")
         case .fault: logger.fault("\(message)")
-        default: logger.default("\(message)")
+        default: logger.log("\(message)")
         }
     }
     

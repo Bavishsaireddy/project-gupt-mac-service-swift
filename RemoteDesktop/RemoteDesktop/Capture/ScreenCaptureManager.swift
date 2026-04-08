@@ -123,7 +123,9 @@ class ScreenCaptureManager: NSObject {
         // Optimize for performance
         config.showsCursor = configuration.showCursor
         config.scalesToFit = configuration.scalesToFit
-        config.captureResolution = .best
+        if #available(macOS 14.0, *) {
+            config.captureResolution = .best
+        }
         config.colorSpaceName = CGColorSpace.sRGB
         config.pixelFormat = kCVPixelFormatType_32BGRA
 
@@ -209,9 +211,32 @@ extension ScreenCaptureManager: SCStreamOutput {
         guard type == .screen else { return }
 
         // Validate sample buffer
-        guard sampleBuffer.isValid,
-              let imageBuffer = sampleBuffer.imageBuffer else {
-            logger.warning("Invalid sample buffer received")
+        guard sampleBuffer.isValid, let imageBuffer = sampleBuffer.imageBuffer else {
+            // Check why it's invalid
+            if let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+               let attachments = attachmentsArray.first,
+               let statusRawValue = attachments[SCStreamFrameInfo.status] as? Int,
+               let status = SCFrameStatus(rawValue: statusRawValue) {
+                switch status {
+                case .complete:
+                    logger.warning("Frame complete but no imageBuffer")
+                case .idle:
+                    // Normal behavior when screen is unchanged
+                    break
+                case .blank:
+                    logger.warning("Frame is blank! (Usually TCC permission denial)")
+                case .suspended:
+                    logger.warning("Frame suspended")
+                case .stopped:
+                    logger.warning("Frame stopped")
+                case .started:
+                    logger.warning("Frame started")
+                @unknown default:
+                    logger.warning("Unknown frame status: \(statusRawValue)")
+                }
+            } else {
+                logger.warning("Invalid sample buffer and no SCStreamFrameInfo attachments")
+            }
             return
         }
 
@@ -220,6 +245,36 @@ extension ScreenCaptureManager: SCStreamOutput {
         guard pixelFormat == kCVPixelFormatType_32BGRA else {
             logger.warning("Unexpected pixel format: \(pixelFormat)")
             return
+        }
+
+        // Diagnostic logging for the first few frames
+        struct FrameCounter { static var count = 0 }
+        FrameCounter.count += 1
+        
+        if FrameCounter.count <= 5 {
+            CVPixelBufferLockBaseAddress(imageBuffer, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(imageBuffer, .readOnly) }
+            
+            if let baseAddress = CVPixelBufferGetBaseAddress(imageBuffer) {
+                let bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer)
+                let height = CVPixelBufferGetHeight(imageBuffer)
+                let width = CVPixelBufferGetWidth(imageBuffer)
+                
+                // Sample the center pixel to see if it's completely black
+                let centerRow = height / 2
+                let centerCol = width / 2
+                let byteOffset = (centerRow * bytesPerRow) + (centerCol * 4)
+                
+                let pixel = baseAddress.advanced(by: byteOffset).assumingMemoryBound(to: UInt32.self).pointee
+                
+                logger.info("Captured Frame #\(FrameCounter.count): \(width)x\(height), format: 32BGRA, center pixel argb/bgra: \(String(format:"0x%08X", pixel))")
+                
+                if pixel == 0 {
+                    logger.warning("⚠️ Warning: Frame \(FrameCounter.count) appears to be pitch black. ScreenCaptureKit permission might be stale.")
+                }
+            } else {
+                logger.warning("Could not access base address of image buffer for frame \(FrameCounter.count)")
+            }
         }
 
         // Deliver to delegate

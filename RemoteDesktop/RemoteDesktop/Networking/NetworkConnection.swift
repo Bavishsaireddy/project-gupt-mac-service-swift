@@ -47,17 +47,20 @@ class NetworkConnection {
     // MARK: - Initialization
 
     /// Initialize with host and port
-    init(host: String, port: UInt16, useTLS: Bool = true) async {
+    init(host: String, port: UInt16, useTLS: Bool = true) {
         self.queue = DispatchQueue(label: "com.remotedesktop.connection", qos: .userInteractive)
-        self.codec = await MessageCodec()
+        self.codec = MessageCodec()
 
         let nwHost = NWEndpoint.Host(host)
         let nwPort = NWEndpoint.Port(rawValue: port)!
 
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true  // Disable Nagle's algorithm
+        tcpOptions.enableKeepalive = true
+        tcpOptions.keepaliveInterval = 5  // seconds
+
         let parameters: NWParameters
         if useTLS {
-            parameters = .tls
-            // Configure TLS options
             let tlsOptions = NWProtocolTLS.Options()
             // Accept self-signed certificates for now (improve security later)
             sec_protocol_options_set_verify_block(
@@ -67,26 +70,21 @@ class NetworkConnection {
                 },
                 queue
             )
-            parameters.defaultProtocolStack.transportProtocol = tlsOptions
+            // Match the host's TLS version requirement
+            sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
+            parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
         } else {
-            parameters = .tcp
+            parameters = NWParameters(tls: nil, tcp: tcpOptions)
         }
-
-        // Configure TCP options for low latency
-        let tcpOptions = NWProtocolTCP.Options()
-        tcpOptions.noDelay = true  // Disable Nagle's algorithm
-        tcpOptions.enableKeepalive = true
-        tcpOptions.keepaliveInterval = 5  // seconds
-        parameters.defaultProtocolStack.transportProtocol = tcpOptions
 
         self.connection = NWConnection(host: nwHost, port: nwPort, using: parameters)
     }
 
     /// Initialize with existing NWConnection (for accepted connections)
-    init(connection: NWConnection) async {
+    init(connection: NWConnection) {
         self.connection = connection
         self.queue = DispatchQueue(label: "com.remotedesktop.connection", qos: .userInteractive)
-        self.codec = await MessageCodec()
+        self.codec = MessageCodec()
     }
 
     // MARK: - Connection Management

@@ -35,7 +35,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func checkPermissions() {
         // Check screen recording permission
-        let hasScreenRecording = CGPreflightScreenCaptureAccess()
+        let hasScreenRecording: Bool
+        if #available(macOS 14.4, *) {
+            // Actively request permission (forces prompt if needed)
+            hasScreenRecording = CGRequestScreenCaptureAccess()
+            logger.info("Screen capture access checked (macOS 14.4+): \(hasScreenRecording)")
+        } else {
+            // Older API just checks if we have it
+            hasScreenRecording = CGPreflightScreenCaptureAccess()
+        }
+
         if !hasScreenRecording {
             logger.warning("Screen recording permission not granted")
             showPermissionAlert(for: .screenRecording)

@@ -270,20 +270,26 @@ class VideoDecoder {
             return nil
         }
 
-        // Create format description
+        // Create format description using nested withUnsafeBytes for correct pointer types
         var formatDesc: CMFormatDescription?
-        let parameterSets = [sps, pps]
-        let parameterSetPointers = parameterSets.map { $0.withUnsafeBytes { $0.baseAddress! } }
-        let parameterSetSizes = parameterSets.map { $0.count }
-
-        let status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
-            allocator: kCFAllocatorDefault,
-            parameterSetCount: 2,
-            parameterSetPointers: parameterSetPointers,
-            parameterSetSizes: parameterSetSizes,
-            nalUnitHeaderLength: 4,
-            formatDescriptionOut: &formatDesc
-        )
+        var status: OSStatus = noErr
+        sps.withUnsafeBytes { spsPtr in
+            pps.withUnsafeBytes { ppsPtr in
+                let paramPtrs: [UnsafePointer<UInt8>] = [
+                    spsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                    ppsPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                ]
+                let paramSizes: [Int] = [sps.count, pps.count]
+                status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                    allocator: kCFAllocatorDefault,
+                    parameterSetCount: 2,
+                    parameterSetPointers: paramPtrs,
+                    parameterSetSizes: paramSizes,
+                    nalUnitHeaderLength: 4,
+                    formatDescriptionOut: &formatDesc
+                )
+            }
+        }
 
         guard status == noErr else {
             return nil

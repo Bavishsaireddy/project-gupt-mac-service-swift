@@ -65,7 +65,7 @@ class LatencyMonitor {
                 self.frameCount = 0
                 self.lastFPSUpdate = now
                 
-                self.logger.debug("Performance: \(self.currentMetrics.fps, format: .f(1)) FPS, \(self.currentMetrics.totalLatency, format: .f(1))ms Latency")
+                self.logger.debug("Performance: \(String(format: "%.1f", self.currentMetrics.fps)) FPS, \(String(format: "%.1f", self.currentMetrics.totalLatency))ms Latency")
             }
         }
     }

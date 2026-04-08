@@ -257,14 +257,4 @@ struct PermissionBadge: View {
     }
 }
 
-// MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // App-wide initialization if needed
-    }
-    
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
-    }
-}

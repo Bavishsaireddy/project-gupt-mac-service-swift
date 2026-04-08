@@ -129,21 +129,11 @@ class VideoEncoder {
             value: 0 as CFNumber
         )
 
-        // Use hardware acceleration if available
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_EnableHardwareAcceleratedVideoEncoder,
-            value: kCFBooleanTrue
-        )
-
-        // Set priority for low latency
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_Priority,
-            value: 0 as CFNumber  // Highest priority
-        )
-
-        logger.info("Encoder configured: \(configuration.bitrate) bps, \(configuration.expectedFrameRate) fps")
+        // Hardware acceleration relies on Apple default for VideoToolbox
+        
+        // Let it determine priority natively by omitting the kVTCompressionPropertyKey_Priority key
+        
+        logger.info("Encoder configured: \(self.configuration.bitrate) bps, \(self.configuration.expectedFrameRate) fps")
     }
 
     /// Invalidate encoding session
@@ -261,7 +251,7 @@ class VideoEncoder {
         let isKeyframe = !flags.contains(.frameDropped) && sampleBuffer.isKeyframe
 
         // Extract encoded data
-        guard let data = extractEncodedData(from: sampleBuffer) else {
+        guard let data = extractEncodedData(from: sampleBuffer, isKeyframe: isKeyframe) else {
             logger.error("Failed to extract encoded data")
             return
         }
@@ -272,7 +262,7 @@ class VideoEncoder {
         delegate?.encoder(self, didEncodeFrame: data, isKeyframe: isKeyframe, presentationTime: presentationTime)
     }
 
-    private func extractEncodedData(from sampleBuffer: CMSampleBuffer) -> Data? {
+    private func extractEncodedData(from sampleBuffer: CMSampleBuffer, isKeyframe: Bool) -> Data? {
         guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
             return nil
         }
@@ -292,7 +282,54 @@ class VideoEncoder {
             return nil
         }
 
-        return Data(bytes: pointer, count: length)
+        var annexBData = Data()
+        
+        // 1. If keyframe, prepend SPS and PPS
+        if isKeyframe, let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
+            var count: Int = 0
+            CMVideoFormatDescriptionGetH264ParameterSetAtIndex(formatDesc, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
+            
+            for i in 0..<count {
+                var parameterSetPointer: UnsafePointer<UInt8>?
+                var parameterSetSize: Int = 0
+                let status = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+                    formatDesc,
+                    parameterSetIndex: i,
+                    parameterSetPointerOut: &parameterSetPointer,
+                    parameterSetSizeOut: &parameterSetSize,
+                    parameterSetCountOut: nil,
+                    nalUnitHeaderLengthOut: nil
+                )
+                
+                if status == noErr, let paramPtr = parameterSetPointer {
+                    annexBData.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+                    annexBData.append(paramPtr, count: parameterSetSize)
+                }
+            }
+        }
+
+        // 2. Convert length prefixes to start codes
+        var offset = 0
+        let nalLengthBytes = 4
+        
+        while offset < length - nalLengthBytes + 1 { // +1 to allow exact read
+            var nalLength: UInt32 = 0
+            memcpy(&nalLength, pointer + offset, nalLengthBytes)
+            nalLength = CFSwapInt32BigToHost(nalLength)
+            
+            // Append start code
+            annexBData.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
+            
+            // Append NAL payload
+            offset += nalLengthBytes
+            if offset + Int(nalLength) <= length {
+                let u8ptr = UnsafeRawPointer(pointer + offset).assumingMemoryBound(to: UInt8.self)
+                annexBData.append(u8ptr, count: Int(nalLength))
+            }
+            offset += Int(nalLength)
+        }
+
+        return annexBData
     }
 
     // MARK: - Statistics

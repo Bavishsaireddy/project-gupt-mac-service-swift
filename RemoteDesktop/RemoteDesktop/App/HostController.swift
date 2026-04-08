@@ -6,10 +6,12 @@
 //
 
 import Foundation
+import Network
+import CoreMedia
 import os.log
 
 /// Coordinates the host-side lifecycle and data pipeline
-class HostController: NSObject {
+class HostController: NSObject, ObservableObject {
     private let logger = Logger(subsystem: "com.remotedesktop", category: "HostController")
     
     private let listener: NetworkListener
@@ -21,12 +23,16 @@ class HostController: NSObject {
     
     private let injector = InputEventInjector()
     
+    // MARK: - Published Properties (for SwiftUI)
+    @Published var isRunning = false
+    @Published var statusMessage = "Ready"
+    
     private var isStarted = false
     
     // MARK: - Initialization
     
     override init() {
-        self.listener = NetworkListener(port: 5900)
+        self.listener = NetworkListener(port: 5999, useTLS: false)
         self.captureManager = ScreenCaptureManager()
         self.encoder = VideoEncoder()
         
@@ -43,24 +49,23 @@ class HostController: NSObject {
     func start() async throws {
         guard !isStarted else { return }
         
-        // 1. Check permissions
-        guard ScreenCaptureManager.requestPermission() else {
-            logger.error("Screen capture permission denied")
-            return
+        // 1. Check permissions (Log only, do not block)
+        if !ScreenCaptureManager.requestPermission() {
+            logger.warning("Screen capture permission might be denied, continuing anyway...")
         }
         
-        guard InputEventInjector.checkPermission() else {
-            logger.error("Accessibility permission denied")
-            return
+        if !InputEventInjector.requestAccessibilityPermission() {
+            logger.warning("Accessibility permission might be denied, continuing anyway...")
         }
         
         // 2. Start listener
         try listener.start()
         
         // 3. Setup encoder
-        try encoder.setupSession(width: 1920, height: 1080)
+        try encoder.initialize(width: 1920, height: 1080)
         
         isStarted = true
+        DispatchQueue.main.async { self.isRunning = true }
         logger.info("HostController started")
     }
     
@@ -74,6 +79,7 @@ class HostController: NSObject {
         activeConnection = nil
         
         isStarted = false
+        DispatchQueue.main.async { self.isRunning = false }
         logger.info("HostController stopped")
     }
     
@@ -103,10 +109,48 @@ extension HostController: NetworkListenerDelegate {
         self.activeConnection = connection
         self.streamer = FrameStreamer(connection: connection)
         
-        // Start screen capture now that we have a client
-        Task {
-            await startCapture()
+        // Set delegate to wait for actual connected state
+        connection.delegate = self
+    }
+}
+
+// MARK: - NetworkConnectionDelegate
+
+extension HostController: NetworkConnectionDelegate {
+    func connection(_ connection: NetworkConnection, didChangeState state: ConnectionState) {
+        switch state {
+        case .connected:
+            Task { @MainActor in
+                self.statusMessage = "Client Connected"
+            }
+            Task {
+                await startCapture()
+            }
+        case .disconnected, .failed:
+            Task { @MainActor in
+                self.statusMessage = "Ready"
+            }
+            Task {
+                await stopCapture()
+            }
+        default:
+            break
         }
+    }
+    
+    func connection(_ connection: NetworkConnection, didReceiveMessage message: NetworkMessage) {
+        if message.type == .inputEvent {
+            do {
+                let inputMessage = try JSONDecoder().decode(InputEventMessage.self, from: message.payload)
+                injector.inject(inputMessage)
+            } catch {
+                logger.error("Failed to decode input event: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func connection(_ connection: NetworkConnection, didEncounterError error: Error) {
+        logger.error("Client connection error: \(error.localizedDescription)")
     }
     
     func listener(_ listener: NetworkListener, didEncounterError error: Error) {
@@ -123,7 +167,7 @@ extension HostController: NetworkListenerDelegate {
 extension HostController: ScreenCaptureDelegate {
     func screenCapture(_ manager: ScreenCaptureManager, didCaptureFrame sampleBuffer: CMSampleBuffer) {
         // Feed the captured frame to the encoder
-        encoder.encodeFrame(sampleBuffer)
+        encoder.encode(sampleBuffer: sampleBuffer)
     }
     
     func screenCapture(_ manager: ScreenCaptureManager, didEncounterError error: Error) {
@@ -134,12 +178,12 @@ extension HostController: ScreenCaptureDelegate {
 // MARK: - VideoEncoderDelegate
 
 extension HostController: VideoEncoderDelegate {
-    func videoEncoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, width: Int, height: Int) {
+    func encoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, presentationTime: CMTime) {
         // Feed the encoded frame to the streamer
-        streamer?.sendFrame(data: data, isKeyframe: isKeyframe, width: width, height: height)
+        streamer?.sendFrame(data: data, isKeyframe: isKeyframe, width: 1920, height: 1080)
     }
     
-    func videoEncoder(_ encoder: VideoEncoder, didEncounterError error: Error) {
+    func encoder(_ encoder: VideoEncoder, didEncounterError error: Error) {
         logger.error("Encoder error: \(error.localizedDescription)")
     }
 }

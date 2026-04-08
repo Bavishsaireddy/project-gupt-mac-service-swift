@@ -137,6 +137,10 @@ enum CodecError: Error, LocalizedError {
     case invalidFormat
     case unsupportedCodec
     case hardwareNotAvailable
+    // Networking codec errors
+    case payloadTooLarge
+    case insufficientData
+    case invalidMessageType
 
     var errorDescription: String? {
         switch self {
@@ -154,6 +158,12 @@ enum CodecError: Error, LocalizedError {
             return "Codec not supported on this device"
         case .hardwareNotAvailable:
             return "Hardware acceleration not available"
+        case .payloadTooLarge:
+            return "Message payload exceeds maximum size"
+        case .insufficientData:
+            return "Insufficient data to decode message"
+        case .invalidMessageType:
+            return "Invalid message type"
         }
     }
 }
