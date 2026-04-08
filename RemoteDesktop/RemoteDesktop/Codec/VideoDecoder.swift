@@ -191,11 +191,11 @@ class VideoDecoder {
         frameCount += 1
     }
 
-    /// Decode from H.264 NAL units with SPS/PPS headers
-    func decodeWithHeaders(data: Data, presentationTime: CMTime) {
+    /// Decode from H.264 NAL units (AVCC)
+    func decodeWithHeaders(data: Data, presentationTime: CMTime, sps: Data? = nil, pps: Data? = nil) {
         // Extract SPS and PPS if this is the first frame or format changed
         if formatDescription == nil {
-            if let formatDesc = createFormatDescription(from: data) {
+            if let formatDesc = createFormatDescription(sps: sps, pps: pps) {
                 do {
                     try initialize(formatDescription: formatDesc)
                 } catch {
@@ -204,69 +204,20 @@ class VideoDecoder {
                     return
                 }
             } else {
-                logger.error("Failed to create format description")
+                logger.error("Failed to create format description (missing or invalid SPS/PPS)")
                 return
             }
         }
 
-        // Decode the frame
-        let isKeyframe = data.starts(with: [0x00, 0x00, 0x00, 0x01, 0x65]) || data.starts(with: [0x00, 0x00, 0x01, 0x65])
+        // Decode the frame (AVCC stream)
+        let isKeyframe = sps != nil || pps != nil
         decode(data: data, presentationTime: presentationTime, isKeyframe: isKeyframe)
     }
 
     // MARK: - Format Description
 
-    private func createFormatDescription(from data: Data) -> CMFormatDescription? {
-        // Parse H.264 NAL units to extract SPS and PPS
-        // This is a simplified version - in production, use proper H.264 parser
-
-        var spsData: Data?
-        var ppsData: Data?
-
-        let bytes = [UInt8](data)
-        var index = 0
-
-        while index < bytes.count - 4 {
-            // Look for start code (0x00 0x00 0x00 0x01 or 0x00 0x00 0x01)
-            let isLongStartCode = bytes[index] == 0x00 && bytes[index+1] == 0x00 &&
-                                  bytes[index+2] == 0x00 && bytes[index+3] == 0x01
-            let isShortStartCode = !isLongStartCode && bytes[index] == 0x00 &&
-                                   bytes[index+1] == 0x00 && bytes[index+2] == 0x01
-
-            if isLongStartCode || isShortStartCode {
-                let startCodeLength = isLongStartCode ? 4 : 3
-                let nalStart = index + startCodeLength
-
-                guard nalStart < bytes.count else { break }
-
-                let nalType = bytes[nalStart] & 0x1F
-
-                // Find next start code
-                var nalEnd = nalStart + 1
-                while nalEnd < bytes.count - 3 {
-                    if (bytes[nalEnd] == 0x00 && bytes[nalEnd+1] == 0x00 &&
-                        (bytes[nalEnd+2] == 0x01 || (bytes[nalEnd+2] == 0x00 && nalEnd < bytes.count - 4 && bytes[nalEnd+3] == 0x01))) {
-                        break
-                    }
-                    nalEnd += 1
-                }
-
-                let nalData = Data(bytes[nalStart..<nalEnd])
-
-                // Check NAL type
-                if nalType == 7 {  // SPS
-                    spsData = nalData
-                } else if nalType == 8 {  // PPS
-                    ppsData = nalData
-                }
-
-                index = nalEnd
-            } else {
-                index += 1
-            }
-        }
-
-        guard let sps = spsData, let pps = ppsData else {
+    private func createFormatDescription(sps: Data?, pps: Data?) -> CMFormatDescription? {
+        guard let sps = sps, let pps = pps else {
             return nil
         }
 

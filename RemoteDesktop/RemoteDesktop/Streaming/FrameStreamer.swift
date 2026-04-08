@@ -28,7 +28,7 @@ class FrameStreamer {
     ///   - isKeyframe: Whether this is an I-frame
     ///   - width: Frame width
     ///   - height: Frame height
-    func sendFrame(data: Data, isKeyframe: Bool, width: Int, height: Int) {
+    func sendFrame(data: Data, isKeyframe: Bool, sps: Data? = nil, pps: Data? = nil, width: Int, height: Int) {
         queue.async {
             self.frameSequence += 1
             let currentFrameSeq = self.frameSequence
@@ -39,7 +39,9 @@ class FrameStreamer {
                 isKeyframe: isKeyframe,
                 width: width,
                 height: height,
-                frameData: data
+                frameData: data,
+                sps: sps,
+                pps: pps
             )
             
             // 2. Serialize the payload

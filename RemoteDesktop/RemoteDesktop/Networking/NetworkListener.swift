@@ -122,7 +122,7 @@ class NetworkListener {
 
         Task {
             let connection = NetworkConnection(connection: nwConnection)
-            connection.start()
+            // Connection should be started by the delegate after assignment
             delegate?.listener(self, didAcceptConnection: connection)
         }
     }

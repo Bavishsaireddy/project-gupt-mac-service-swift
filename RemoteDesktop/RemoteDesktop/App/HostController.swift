@@ -111,6 +111,9 @@ extension HostController: NetworkListenerDelegate {
         
         // Set delegate to wait for actual connected state
         connection.delegate = self
+        
+        // Start connection after setting delegate
+        connection.start()
     }
 }
 
@@ -178,9 +181,9 @@ extension HostController: ScreenCaptureDelegate {
 // MARK: - VideoEncoderDelegate
 
 extension HostController: VideoEncoderDelegate {
-    func encoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, presentationTime: CMTime) {
+    func encoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, sps: Data?, pps: Data?, presentationTime: CMTime) {
         // Feed the encoded frame to the streamer
-        streamer?.sendFrame(data: data, isKeyframe: isKeyframe, width: 1920, height: 1080)
+        streamer?.sendFrame(data: data, isKeyframe: isKeyframe, sps: sps, pps: pps, width: 1920, height: 1080)
     }
     
     func encoder(_ encoder: VideoEncoder, didEncounterError error: Error) {

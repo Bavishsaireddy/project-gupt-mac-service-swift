@@ -10,7 +10,7 @@ import os.log
 
 /// Delegate for frame receiver events
 protocol FrameReceiverDelegate: AnyObject {
-    func frameReceiver(_ receiver: FrameReceiver, didReceiveFrameData data: Data, isKeyframe: Bool, sequence: UInt32)
+    func frameReceiver(_ receiver: FrameReceiver, didReceiveFrameData data: Data, isKeyframe: Bool, sequence: UInt32, sps: Data?, pps: Data?)
 }
 
 /// Manages incoming video frames from the network
@@ -29,14 +29,10 @@ class FrameReceiver {
     
     /// Start receiving video frames
     func start() {
-        // Subscribe to messages from the connection
-        // Note: The actual subscription mechanism should be in NetworkConnection.
-        // For now, I'll assume the ClientController will bridge the two.
         logger.info("FrameReceiver started")
     }
     
     /// Process a received video frame message
-    /// - Parameter message: The deserialized VideoFrameMessage payload
     func processMessage(_ message: VideoFrameMessage) {
         queue.async {
             // Sequence number check (simple for now)
@@ -52,10 +48,12 @@ class FrameReceiver {
                 self,
                 didReceiveFrameData: message.frameData,
                 isKeyframe: message.isKeyframe,
-                sequence: message.frameSequence
+                sequence: message.frameSequence,
+                sps: message.sps,
+                pps: message.pps
             )
             
-            self.logger.debug("Received frame #\(message.frameSequence) (\(message.frameData.count) bytes)")
+            self.logger.debug("Received frame #\(message.frameSequence)")
         }
     }
     

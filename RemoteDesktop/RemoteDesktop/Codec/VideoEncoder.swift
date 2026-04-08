@@ -13,7 +13,7 @@ import os.log
 
 /// Delegate for encoder events
 protocol VideoEncoderDelegate: AnyObject {
-    func encoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, presentationTime: CMTime)
+    func encoder(_ encoder: VideoEncoder, didEncodeFrame data: Data, isKeyframe: Bool, sps: Data?, pps: Data?, presentationTime: CMTime)
     func encoder(_ encoder: VideoEncoder, didEncounterError error: Error)
 }
 
@@ -251,7 +251,7 @@ class VideoEncoder {
         let isKeyframe = !flags.contains(.frameDropped) && sampleBuffer.isKeyframe
 
         // Extract encoded data
-        guard let data = extractEncodedData(from: sampleBuffer, isKeyframe: isKeyframe) else {
+        guard let (data, sps, pps) = extractEncodedData(from: sampleBuffer, isKeyframe: isKeyframe) else {
             logger.error("Failed to extract encoded data")
             return
         }
@@ -259,10 +259,10 @@ class VideoEncoder {
         let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
         // Notify delegate
-        delegate?.encoder(self, didEncodeFrame: data, isKeyframe: isKeyframe, presentationTime: presentationTime)
+        delegate?.encoder(self, didEncodeFrame: data, isKeyframe: isKeyframe, sps: sps, pps: pps, presentationTime: presentationTime)
     }
 
-    private func extractEncodedData(from sampleBuffer: CMSampleBuffer, isKeyframe: Bool) -> Data? {
+    private func extractEncodedData(from sampleBuffer: CMSampleBuffer, isKeyframe: Bool) -> (Data, Data?, Data?)? {
         guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
             return nil
         }
@@ -282,9 +282,11 @@ class VideoEncoder {
             return nil
         }
 
-        var annexBData = Data()
+        let avccData = Data(bytes: pointer, count: length)
+        var spsData: Data? = nil
+        var ppsData: Data? = nil
         
-        // 1. If keyframe, prepend SPS and PPS
+        // 1. If keyframe, extract SPS and PPS
         if isKeyframe, let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
             var count: Int = 0
             CMVideoFormatDescriptionGetH264ParameterSetAtIndex(formatDesc, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
@@ -302,34 +304,13 @@ class VideoEncoder {
                 )
                 
                 if status == noErr, let paramPtr = parameterSetPointer {
-                    annexBData.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
-                    annexBData.append(paramPtr, count: parameterSetSize)
+                    let d = Data(bytes: paramPtr, count: parameterSetSize)
+                    if i == 0 { spsData = d } else if i == 1 { ppsData = d }
                 }
             }
         }
 
-        // 2. Convert length prefixes to start codes
-        var offset = 0
-        let nalLengthBytes = 4
-        
-        while offset < length - nalLengthBytes + 1 { // +1 to allow exact read
-            var nalLength: UInt32 = 0
-            memcpy(&nalLength, pointer + offset, nalLengthBytes)
-            nalLength = CFSwapInt32BigToHost(nalLength)
-            
-            // Append start code
-            annexBData.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
-            
-            // Append NAL payload
-            offset += nalLengthBytes
-            if offset + Int(nalLength) <= length {
-                let u8ptr = UnsafeRawPointer(pointer + offset).assumingMemoryBound(to: UInt8.self)
-                annexBData.append(u8ptr, count: Int(nalLength))
-            }
-            offset += Int(nalLength)
-        }
-
-        return annexBData
+        return (avccData, spsData, ppsData)
     }
 
     // MARK: - Statistics

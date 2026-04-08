@@ -41,6 +41,8 @@ class NetworkConnection {
     }
 
     private var receiveBuffer = Data()
+    private let bufferLock = NSLock()
+    private var isProcessingBuffer = false
     private var sequenceNumber: UInt32 = 0
     private let sequenceLock = NSLock()
 
@@ -104,22 +106,25 @@ class NetworkConnection {
     func stop() {
         connection.cancel()
         state = .disconnected
+        bufferLock.lock()
         receiveBuffer.removeAll()
+        bufferLock.unlock()
     }
 
     private func handleStateUpdate(_ newState: NWConnection.State) {
-        logger.info("Connection state: \(String(describing: newState))")
+        let stateStr = String(describing: newState)
+        logger.info("Connection state: \(stateStr, privacy: .public)")
 
         switch newState {
         case .ready:
             state = .connected
 
         case .waiting(let error):
-            logger.warning("Connection waiting: \(error.localizedDescription)")
+            logger.warning("Connection waiting: \(error.localizedDescription, privacy: .public)")
             state = .connecting
 
         case .failed(let error):
-            logger.error("Connection failed: \(error.localizedDescription)")
+            logger.error("Connection failed: \(error.localizedDescription, privacy: .public) | \(error.debugDescription, privacy: .public)")
             state = .failed(error)
 
         case .cancelled:
@@ -205,9 +210,18 @@ class NetworkConnection {
             }
 
             if let content = content, !content.isEmpty {
+                // Thread-safely append to buffer
+                self.bufferLock.lock()
                 self.receiveBuffer.append(content)
-                Task {
-                    await self.processReceiveBuffer()
+                // Only spin up one processing Task at a time
+                let shouldProcess = !self.isProcessingBuffer
+                if shouldProcess { self.isProcessingBuffer = true }
+                self.bufferLock.unlock()
+
+                if shouldProcess {
+                    Task {
+                        await self.processReceiveBuffer()
+                    }
                 }
             }
 
@@ -218,24 +232,48 @@ class NetworkConnection {
     }
 
     private func processReceiveBuffer() async {
-        do {
-            let (messages, consumed) = try await codec.decodeMultiple(from: receiveBuffer)
+        defer {
+            bufferLock.lock()
+            isProcessingBuffer = false
+            bufferLock.unlock()
+        }
 
-            // Remove processed bytes
-            if consumed > 0 {
-                receiveBuffer.removeFirst(consumed)
-            }
+        // Drain the buffer in a loop so data that arrived while we were
+        // processing is also handled without spawning another Task.
+        while true {
+            bufferLock.lock()
+            let snapshot = receiveBuffer
+            bufferLock.unlock()
 
-            // Deliver messages
-            for message in messages {
-                delegate?.connection(self, didReceiveMessage: message)
+            guard !snapshot.isEmpty else { break }
+
+            do {
+                let (messages, consumed) = try await codec.decodeMultiple(from: snapshot)
+
+                // Remove exactly the bytes we consumed (guard against stale snapshots)
+                if consumed > 0 {
+                    bufferLock.lock()
+                    let safeConsumed = min(consumed, receiveBuffer.count)
+                    receiveBuffer.removeFirst(safeConsumed)
+                    bufferLock.unlock()
+                }
+
+                // Deliver messages
+                for message in messages {
+                    delegate?.connection(self, didReceiveMessage: message)
+                }
+
+                // If we decoded nothing new, stop — more data will trigger a fresh Task
+                if messages.isEmpty { break }
+
+            } catch CodecError.insufficientData {
+                // Wait for more data to arrive
+                break
+            } catch {
+                logger.error("Failed to decode message: \(error.localizedDescription)")
+                delegate?.connection(self, didEncounterError: error)
+                break
             }
-        } catch CodecError.insufficientData {
-            // Wait for more data
-            return
-        } catch {
-            logger.error("Failed to decode message: \(error.localizedDescription)")
-            delegate?.connection(self, didEncounterError: error)
         }
     }
 

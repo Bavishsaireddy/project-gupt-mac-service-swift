@@ -82,15 +82,19 @@ struct VideoFrameMessage: Codable {
     let height: Int
     let frameData: Data
     let compressionFormat: String   // "h264"
+    let sps: Data?
+    let pps: Data?
 
     /// Create from encoded frame data
-    init(frameSequence: UInt32, isKeyframe: Bool, width: Int, height: Int, frameData: Data) {
+    init(frameSequence: UInt32, isKeyframe: Bool, width: Int, height: Int, frameData: Data, sps: Data? = nil, pps: Data? = nil) {
         self.frameSequence = frameSequence
         self.isKeyframe = isKeyframe
         self.width = width
         self.height = height
         self.frameData = frameData
         self.compressionFormat = "h264"
+        self.sps = sps
+        self.pps = pps
     }
 }
 
@@ -232,6 +236,6 @@ struct DisconnectMessage: Codable {
 
 enum MessageConstants {
     static let headerSize = 17  // 1 (type) + 4 (sequence) + 8 (timestamp) + 4 (payload size)
-    static let maxPayloadSize = 1_000_000  // 1 MB max per message
+    static let maxPayloadSize = 10_000_000  // 10 MB max per message to handle large JSON keyframes
     static let keepAliveInterval: TimeInterval = 5.0  // seconds
 }

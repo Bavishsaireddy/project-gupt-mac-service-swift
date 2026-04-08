@@ -18,30 +18,15 @@ class ClientController: NSObject, ObservableObject {
     @Published var isConnected = false
     @Published var currentFrame: CVPixelBuffer?
     
+    // Only the real connection and decoder matter
     private var connection: NetworkConnection?
-    private let receiver: FrameReceiver
-    private let jitterBuffer: JitterBuffer
     private let decoder: VideoDecoder
-    private var presenter: FramePresenter!
     
     // MARK: - Initialization
     
     override init() {
-        // Will initialize correctly on connect
-        self.receiver = FrameReceiver(connection: NetworkConnection(host: "localhost", port: 5999, useTLS: false))
-        self.jitterBuffer = JitterBuffer()
         self.decoder = VideoDecoder()
-        
         super.init()
-        
-        // Setup presenter callback after super.init() to access self safely
-        self.presenter = FramePresenter(jitterBuffer: jitterBuffer) { [weak self] frame in
-            DispatchQueue.main.async {
-                self?.currentFrame = frame
-            }
-        }
-        
-        self.receiver.delegate = self
         self.decoder.delegate = self
     }
     
@@ -52,39 +37,23 @@ class ClientController: NSObject, ObservableObject {
         let newConnection = NetworkConnection(host: host, port: port, useTLS: false)
         self.connection = newConnection
         newConnection.delegate = self
-        
         newConnection.start()
-        
-        // Start pipelines
-        self.receiver.start()
-        self.presenter.start()
-        
-        logger.info("ClientController attempting to connect to \(host):\(port)")
+        logger.info("ClientController connecting to \(host):\(port)")
     }
     
     /// Disconnect from the current host
     func disconnect() async {
         connection?.stop()
         connection = nil
-        isConnected = false
         
-        presenter.stop()
-        jitterBuffer.reset()
+        DispatchQueue.main.async {
+            self.isConnected = false
+            self.currentFrame = nil
+        }
         
+        // Reset decoder so next session gets fresh SPS/PPS
+        decoder.invalidate()
         logger.info("ClientController disconnected")
-    }
-}
-
-// MARK: - FrameReceiverDelegate
-
-extension ClientController: FrameReceiverDelegate {
-    func frameReceiver(_ receiver: FrameReceiver, didReceiveFrameData data: Data, isKeyframe: Bool, sequence: UInt32) {
-        // Pass encoded frame to jitter buffer
-        jitterBuffer.addFrame(data: data, isKeyframe: isKeyframe, sequence: sequence)
-        
-        // At some point (either here or via presenter), we decode it
-        let pts = CMTime(value: Int64(sequence), timescale: 60) // Dummy PTS for now
-        decoder.decodeWithHeaders(data: data, presentationTime: pts)
     }
 }
 
@@ -111,8 +80,12 @@ extension ClientController: NetworkConnectionDelegate {
             switch state {
             case .connected:
                 self.isConnected = true
-            case .disconnected, .failed:
+                self.logger.info("Connection is ready — waiting for frames")
+            case .disconnected:
                 self.isConnected = false
+            case .failed(let error):
+                self.isConnected = false
+                self.logger.error("Connection failed: \(error.localizedDescription)")
             default:
                 break
             }
@@ -120,17 +93,31 @@ extension ClientController: NetworkConnectionDelegate {
     }
     
     func connection(_ connection: NetworkConnection, didReceiveMessage message: NetworkMessage) {
-        if message.type == .videoFrame {
-            do {
-                let frameMessage = try JSONDecoder().decode(VideoFrameMessage.self, from: message.payload)
-                receiver.processMessage(frameMessage)
-            } catch {
-                logger.error("Failed to decode video frame: \(error.localizedDescription)")
-            }
+        guard message.type == .videoFrame else { return }
+        
+        do {
+            let frameMessage = try JSONDecoder().decode(VideoFrameMessage.self, from: message.payload)
+            
+            let pts = CMTime(
+                value: Int64(frameMessage.frameSequence),
+                timescale: 30
+            )
+            
+            // Single decode path — directly to VideoDecoder → didDecodeFrame → currentFrame → Metal
+            decoder.decodeWithHeaders(
+                data: frameMessage.frameData,
+                presentationTime: pts,
+                sps: frameMessage.sps,
+                pps: frameMessage.pps
+            )
+            
+            logger.debug("Dispatched frame #\(frameMessage.frameSequence) to decoder (keyframe: \(frameMessage.isKeyframe))")
+        } catch {
+            logger.error("Failed to decode VideoFrameMessage: \(error.localizedDescription)")
         }
     }
     
     func connection(_ connection: NetworkConnection, didEncounterError error: Error) {
-        logger.error("Network connection error: \(error.localizedDescription)")
+        logger.error("Network error: \(error.localizedDescription)")
     }
 }
