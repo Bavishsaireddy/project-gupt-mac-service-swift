@@ -1,6 +1,6 @@
 //
 //  HostController.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Main coordinator for the host-side logic
 //
@@ -12,16 +12,19 @@ import os.log
 
 /// Coordinates the host-side lifecycle and data pipeline
 class HostController: NSObject, ObservableObject {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "HostController")
+    private let logger = Logger(subsystem: "com.gupt", category: "HostController")
     
-    private let listener: NetworkListener
     private var activeConnection: NetworkConnection?
+    
+    // The shared room code for this session
+    @Published var roomCode: String = ""
     
     private let captureManager: ScreenCaptureManager
     private let encoder: VideoEncoder
     private var streamer: FrameStreamer?
     
     private let injector = InputEventInjector()
+    private let clipboardManager = ClipboardManager()
     
     // MARK: - Published Properties (for SwiftUI)
     @Published var isRunning = false
@@ -32,15 +35,18 @@ class HostController: NSObject, ObservableObject {
     // MARK: - Initialization
     
     override init() {
-        self.listener = NetworkListener(port: 5999, useTLS: false)
         self.captureManager = ScreenCaptureManager()
         self.encoder = VideoEncoder()
         
         super.init()
         
-        self.listener.delegate = self
+        // Generate random 6-digit room code
+        let code = String(format: "%06d", Int.random(in: 100000...999999))
+        self.roomCode = code
+        
         self.captureManager.delegate = self
         self.encoder.delegate = self
+        self.clipboardManager.delegate = self
     }
     
     // MARK: - Lifecycle Management
@@ -58,11 +64,25 @@ class HostController: NSObject, ObservableObject {
             logger.warning("Accessibility permission might be denied, continuing anyway...")
         }
         
-        // 2. Start listener
-        try listener.start()
-        
-        // 3. Setup encoder
+        // 2. Setup encoder
         try encoder.initialize(width: 1920, height: 1080)
+        
+        // 3. Connect to Relay Server
+        let serverURLString = SessionManager.shared.relayServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baserUrl = serverURLString.hasSuffix("/") ? String(serverURLString.dropLast()) : serverURLString
+        guard let url = URL(string: "\(baserUrl)/host/\(roomCode)") else {
+            logger.error("Invalid relay server URL")
+            return
+        }
+        
+        logger.info("Connecting Host to URL: \(url.absoluteString)")
+        
+        let connection = NetworkConnection(url: url)
+        self.activeConnection = connection
+        self.streamer = FrameStreamer(connection: connection)
+        
+        connection.delegate = self
+        connection.start()
         
         isStarted = true
         DispatchQueue.main.async { self.isRunning = true }
@@ -74,7 +94,7 @@ class HostController: NSObject, ObservableObject {
         guard isStarted else { return }
         
         await stopCapture()
-        listener.stop()
+        clipboardManager.stopMonitoring()
         activeConnection?.stop()
         activeConnection = nil
         
@@ -100,20 +120,36 @@ class HostController: NSObject, ObservableObject {
     }
 }
 
-// MARK: - NetworkListenerDelegate
+// MARK: - ClipboardManagerDelegate
 
-extension HostController: NetworkListenerDelegate {
-    func listener(_ listener: NetworkListener, didAcceptConnection connection: NetworkConnection) {
-        logger.info("Connected to client: \(String(describing: connection))")
-        
-        self.activeConnection = connection
-        self.streamer = FrameStreamer(connection: connection)
-        
-        // Set delegate to wait for actual connected state
-        connection.delegate = self
-        
-        // Start connection after setting delegate
-        connection.start()
+extension HostController: ClipboardManagerDelegate {
+    func clipboardManager(_ manager: ClipboardManager, didDetectChange text: String) {
+        guard let conn = activeConnection else { return }
+
+        let clipboardMsg = ClipboardMessage(
+            text: text,
+            timestamp: NetworkMessage.currentTimestamp()
+        )
+
+        do {
+            let data = try JSONEncoder().encode(clipboardMsg)
+            let message = NetworkMessage(
+                type: .clipboard,
+                sequenceNumber: 0,
+                timestamp: clipboardMsg.timestamp,
+                payload: data
+            )
+            Task {
+                do {
+                    try await conn.send(message)
+                    logger.debug("Sent host clipboard to client: \(text.prefix(30))...")
+                } catch {
+                    logger.error("Failed to send clipboard: \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            logger.error("Failed to encode clipboard message: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -129,6 +165,9 @@ extension HostController: NetworkConnectionDelegate {
             Task {
                 await startCapture()
             }
+            // Start clipboard monitoring for bidirectional sync
+            clipboardManager.startMonitoring()
+
         case .disconnected, .failed:
             Task { @MainActor in
                 self.statusMessage = "Ready"
@@ -136,32 +175,52 @@ extension HostController: NetworkConnectionDelegate {
             Task {
                 await stopCapture()
             }
+            clipboardManager.stopMonitoring()
+
         default:
             break
         }
     }
     
     func connection(_ connection: NetworkConnection, didReceiveMessage message: NetworkMessage) {
-        if message.type == .inputEvent {
+        switch message.type {
+        case .handshake:
+            logger.info("Received handshake from client, forcing immediate keyframe")
+            encoder.requestKeyframe()
+            // Instantly awake ScreenCaptureKit to generate our newly requested keyframe 
+            // by injecting a synthetic redundant mouse movement
+            injector.jiggleMouse()
+            
+        case .inputEvent:
             do {
                 let inputMessage = try JSONDecoder().decode(InputEventMessage.self, from: message.payload)
                 injector.inject(inputMessage)
             } catch {
                 logger.error("Failed to decode input event: \(error.localizedDescription)")
             }
+
+        case .clipboard:
+            // Receive clipboard from client and apply locally on the host
+            do {
+                let clipMsg = try JSONDecoder().decode(ClipboardMessage.self, from: message.payload)
+                DispatchQueue.main.async {
+                    self.clipboardManager.writeToLocalPasteboard(clipMsg.text)
+                    self.logger.debug("Applied client clipboard on host: \(clipMsg.text.prefix(30))...")
+                }
+            } catch {
+                logger.error("Failed to decode clipboard message: \(error.localizedDescription)")
+            }
+
+        default:
+            break
         }
     }
     
     func connection(_ connection: NetworkConnection, didEncounterError error: Error) {
         logger.error("Client connection error: \(error.localizedDescription)")
-    }
-    
-    func listener(_ listener: NetworkListener, didEncounterError error: Error) {
-        logger.error("Listener error: \(error.localizedDescription)")
-    }
-    
-    func listener(_ listener: NetworkListener, didChangeState state: NWListener.State) {
-        logger.info("Listener state changed: \(String(describing: state))")
+        Task { @MainActor in
+            self.statusMessage = "Connection failed: \(error.localizedDescription)"
+        }
     }
 }
 

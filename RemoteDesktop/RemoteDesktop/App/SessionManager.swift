@@ -1,6 +1,6 @@
 //
 //  SessionManager.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Manages persistent application state, connection history, and preferences
 //
@@ -11,32 +11,35 @@ import os.log
 /// Manages application-wide state and persistence
 class SessionManager: ObservableObject {
     static let shared = SessionManager()
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "SessionManager")
+    private let logger = Logger(subsystem: "com.gupt", category: "SessionManager")
     
     // MARK: - Published Properties
     
     @Published var connectionHistory: [ConnectionEntry] = []
     @Published var currentPassword: String = ""
+    @Published var relayServerURL: String = "ws://localhost:3900"
     
     // MARK: - Persistence Keys
     
-    private let historyKey = "com.remotedesktop.history"
-    private let passwordKey = "com.remotedesktop.password"
+    private let historyKey = "com.gupt.history"
+    private let passwordKey = "com.gupt.password"
+    private let relayServerKey = "com.gupt.relayserver"
     
     // MARK: - Initialization
     
     private init() {
         loadHistory()
         loadPassword()
+        loadRelayServer()
     }
     
     // MARK: - History Management
     
-    func addHistoryEntry(host: String, port: UInt16) {
-        let entry = ConnectionEntry(host: host, port: port, lastConnected: Date())
+    func addHistoryEntry(roomCode: String) {
+        let entry = ConnectionEntry(roomCode: roomCode, lastConnected: Date())
         
-        // Remove existing entry for same host
-        connectionHistory.removeAll { $0.host == host }
+        // Remove existing entry for same room
+        connectionHistory.removeAll { $0.roomCode == roomCode }
         
         // Add to top and limit size
         connectionHistory.insert(entry, at: 0)
@@ -81,13 +84,23 @@ class SessionManager: ObservableObject {
     private func savePassword() {
         UserDefaults.standard.set(currentPassword, forKey: passwordKey)
     }
+
+    func updateRelayServer(_ url: String) {
+        relayServerURL = url
+        UserDefaults.standard.set(url, forKey: relayServerKey)
+    }
+
+    private func loadRelayServer() {
+        if let url = UserDefaults.standard.string(forKey: relayServerKey) {
+            relayServerURL = url
+        }
+    }
 }
 
-// MARK: - Supporting Types
+// MARK: - Models
 
 struct ConnectionEntry: Codable, Identifiable {
-    var id: String { host + "\(port)" }
-    let host: String
-    let port: UInt16
+    var id: String { roomCode }
+    let roomCode: String
     let lastConnected: Date
 }

@@ -2,11 +2,10 @@
 //  NetworkConnection.swift
 //  RemoteDesktop
 //
-//  Wrapper around NWConnection for client connections
+//  WebSocket-based network connection using URLSessionWebSocketTask
 //
 
 import Foundation
-import Network
 import os.log
 
 /// Network connection state
@@ -24,13 +23,13 @@ protocol NetworkConnectionDelegate: AnyObject {
     func connection(_ connection: NetworkConnection, didEncounterError error: Error)
 }
 
-/// Client-side network connection using NWConnection
-@available(macOS 10.14, *)
-class NetworkConnection {
-    private let connection: NWConnection
+/// WebSocket-based network connection using URLSessionWebSocketTask
+class NetworkConnection: NSObject, URLSessionWebSocketDelegate {
+    private var webSocketTask: URLSessionWebSocketTask?
+    private var session: URLSession?
     private let codec: MessageCodec
-    private let queue: DispatchQueue
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "NetworkConnection")
+    private let url: URL
+    private let logger = Logger(subsystem: "com.gupt", category: "NetworkConnection")
 
     weak var delegate: NetworkConnectionDelegate?
 
@@ -40,53 +39,15 @@ class NetworkConnection {
         }
     }
 
-    private var receiveBuffer = Data()
-    private let bufferLock = NSLock()
-    private var isProcessingBuffer = false
     private var sequenceNumber: UInt32 = 0
     private let sequenceLock = NSLock()
 
     // MARK: - Initialization
 
-    /// Initialize with host and port
-    init(host: String, port: UInt16, useTLS: Bool = true) {
-        self.queue = DispatchQueue(label: "com.remotedesktop.connection", qos: .userInteractive)
+    init(url: URL) {
+        self.url = url
         self.codec = MessageCodec()
-
-        let nwHost = NWEndpoint.Host(host)
-        let nwPort = NWEndpoint.Port(rawValue: port)!
-
-        let tcpOptions = NWProtocolTCP.Options()
-        tcpOptions.noDelay = true  // Disable Nagle's algorithm
-        tcpOptions.enableKeepalive = true
-        tcpOptions.keepaliveInterval = 5  // seconds
-
-        let parameters: NWParameters
-        if useTLS {
-            let tlsOptions = NWProtocolTLS.Options()
-            // Accept self-signed certificates for now (improve security later)
-            sec_protocol_options_set_verify_block(
-                tlsOptions.securityProtocolOptions,
-                { _, _, completion in
-                    completion(true)
-                },
-                queue
-            )
-            // Match the host's TLS version requirement
-            sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
-            parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
-        } else {
-            parameters = NWParameters(tls: nil, tcp: tcpOptions)
-        }
-
-        self.connection = NWConnection(host: nwHost, port: nwPort, using: parameters)
-    }
-
-    /// Initialize with existing NWConnection (for accepted connections)
-    init(connection: NWConnection) {
-        self.connection = connection
-        self.queue = DispatchQueue(label: "com.remotedesktop.connection", qos: .userInteractive)
-        self.codec = MessageCodec()
+        super.init()
     }
 
     // MARK: - Connection Management
@@ -94,44 +55,48 @@ class NetworkConnection {
     /// Start the connection
     func start() {
         state = .connecting
-        connection.stateUpdateHandler = { [weak self] newState in
-            self?.handleStateUpdate(newState)
-        }
+        logger.info("Connecting WebSocket to: \(self.url.absoluteString)")
 
-        connection.start(queue: queue)
-        startReceiving()
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
+
+        session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+        webSocketTask = session?.webSocketTask(with: url)
+        webSocketTask?.resume()
     }
 
     /// Stop the connection
     func stop() {
-        connection.cancel()
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+        session?.invalidateAndCancel()
+        session = nil
         state = .disconnected
-        bufferLock.lock()
-        receiveBuffer.removeAll()
-        bufferLock.unlock()
     }
 
-    private func handleStateUpdate(_ newState: NWConnection.State) {
-        let stateStr = String(describing: newState)
-        logger.info("Connection state: \(stateStr, privacy: .public)")
+    // MARK: - URLSessionWebSocketDelegate
 
-        switch newState {
-        case .ready:
-            state = .connected
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        logger.info("WebSocket connected successfully!")
+        state = .connected
+        startReceiving()
+    }
 
-        case .waiting(let error):
-            logger.warning("Connection waiting: \(error.localizedDescription, privacy: .public)")
-            state = .connecting
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        logger.info("WebSocket closed with code: \(closeCode.rawValue)")
+        state = .disconnected
+    }
 
-        case .failed(let error):
-            logger.error("Connection failed: \(error.localizedDescription, privacy: .public) | \(error.debugDescription, privacy: .public)")
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            // Filter out normal cancellation errors
+            let nsError = error as NSError
+            if nsError.code == NSURLErrorCancelled { return }
+            
+            logger.error("WebSocket task error: \(error.localizedDescription)")
             state = .failed(error)
-
-        case .cancelled:
-            state = .disconnected
-
-        default:
-            break
+            delegate?.connection(self, didEncounterError: error)
         }
     }
 
@@ -144,19 +109,7 @@ class NetworkConnection {
         }
 
         let data = try await codec.encode(message)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            connection.send(
-                content: data,
-                completion: .contentProcessed { error in
-                    if let error = error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume()
-                    }
-                }
-            )
-        }
+        try await webSocketTask?.send(.data(data))
     }
 
     /// Send a typed payload
@@ -171,108 +124,64 @@ class NetworkConnection {
         let sequence = nextSequence()
         let data = try await codec.encodeVideoFrame(frame, sequence: sequence)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            connection.send(
-                content: data,
-                completion: .contentProcessed { error in
-                    if let error = error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume()
-                    }
-                }
-            )
+        guard case .connected = state else {
+            throw NetworkError.notConnected
         }
+        try await webSocketTask?.send(.data(data))
     }
 
     private func nextSequence() -> UInt32 {
         sequenceLock.lock()
         defer { sequenceLock.unlock() }
         let current = sequenceNumber
-        sequenceNumber &+= 1  // Wrapping add
+        sequenceNumber &+= 1
         return current
     }
 
     // MARK: - Receiving
 
     private func startReceiving() {
-        receiveMessage()
-    }
-
-    private func receiveMessage() {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
+        webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
 
-            if let error = error {
-                self.logger.error("Receive error: \(error.localizedDescription)")
-                self.delegate?.connection(self, didEncounterError: error)
-                return
-            }
-
-            if let content = content, !content.isEmpty {
-                // Thread-safely append to buffer
-                self.bufferLock.lock()
-                self.receiveBuffer.append(content)
-                // Only spin up one processing Task at a time
-                let shouldProcess = !self.isProcessingBuffer
-                if shouldProcess { self.isProcessingBuffer = true }
-                self.bufferLock.unlock()
-
-                if shouldProcess {
-                    Task {
-                        await self.processReceiveBuffer()
+            switch result {
+            case .success(let wsMessage):
+                switch wsMessage {
+                case .data(let data):
+                    self.processReceivedData(data)
+                case .string(let text):
+                    // Convert text messages to data if needed
+                    if let data = text.data(using: .utf8) {
+                        self.processReceivedData(data)
                     }
+                @unknown default:
+                    break
                 }
-            }
+                // Continue receiving the next message
+                self.startReceiving()
 
-            if !isComplete {
-                self.receiveMessage()  // Continue receiving
+            case .failure(let error):
+                let nsError = error as NSError
+                // Don't report cancellation errors
+                if nsError.code != NSURLErrorCancelled && nsError.code != 57 {
+                    self.logger.error("WebSocket receive error: \(error.localizedDescription)")
+                    self.delegate?.connection(self, didEncounterError: error)
+                }
             }
         }
     }
 
-    private func processReceiveBuffer() async {
-        defer {
-            bufferLock.lock()
-            isProcessingBuffer = false
-            bufferLock.unlock()
-        }
-
-        // Drain the buffer in a loop so data that arrived while we were
-        // processing is also handled without spawning another Task.
-        while true {
-            bufferLock.lock()
-            let snapshot = receiveBuffer
-            bufferLock.unlock()
-
-            guard !snapshot.isEmpty else { break }
-
+    private func processReceivedData(_ data: Data) {
+        // Each WebSocket message is a complete codec-framed message
+        Task {
             do {
-                let (messages, consumed) = try await codec.decodeMultiple(from: snapshot)
-
-                // Remove exactly the bytes we consumed (guard against stale snapshots)
-                if consumed > 0 {
-                    bufferLock.lock()
-                    let safeConsumed = min(consumed, receiveBuffer.count)
-                    receiveBuffer.removeFirst(safeConsumed)
-                    bufferLock.unlock()
-                }
-
-                // Deliver messages
+                let (messages, _) = try await codec.decodeMultiple(from: data)
                 for message in messages {
                     delegate?.connection(self, didReceiveMessage: message)
                 }
-
-                // If we decoded nothing new, stop — more data will trigger a fresh Task
-                if messages.isEmpty { break }
-
-            } catch CodecError.insufficientData {
-                // Wait for more data to arrive
-                break
             } catch {
                 logger.error("Failed to decode message: \(error.localizedDescription)")
                 delegate?.connection(self, didEncounterError: error)
-                break
             }
         }
     }
@@ -284,6 +193,11 @@ class NetworkConnection {
             return true
         }
         return false
+    }
+
+    /// Returns the remote host IP string, if available.
+    var remoteHost: String? {
+        return url.host
     }
 }
 

@@ -21,12 +21,13 @@ protocol VideoEncoderDelegate: AnyObject {
 class VideoEncoder {
     private var compressionSession: VTCompressionSession?
     private let configuration: CodecConfiguration
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "VideoEncoder")
+    private let logger = Logger(subsystem: "com.gupt", category: "VideoEncoder")
 
     weak var delegate: VideoEncoderDelegate?
 
     private var frameCount: Int64 = 0
-    private let queue = DispatchQueue(label: "com.remotedesktop.encoder", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.gupt.encoder", qos: .userInteractive)
+    private var pendingKeyframeRequest = false
 
     // MARK: - Initialization
 
@@ -164,8 +165,9 @@ class VideoEncoder {
 
         // Prepare frame properties
         var frameProperties: [CFString: Any] = [:]
-        if forceKeyframe {
+        if forceKeyframe || pendingKeyframeRequest {
             frameProperties[kVTEncodeFrameOptionKey_ForceKeyFrame] = kCFBooleanTrue
+            pendingKeyframeRequest = false
         }
 
         let status = VTCompressionSessionEncodeFrame(
@@ -194,8 +196,9 @@ class VideoEncoder {
         }
 
         var frameProperties: [CFString: Any] = [:]
-        if forceKeyframe {
+        if forceKeyframe || pendingKeyframeRequest {
             frameProperties[kVTEncodeFrameOptionKey_ForceKeyFrame] = kCFBooleanTrue
+            pendingKeyframeRequest = false
         }
 
         let status = VTCompressionSessionEncodeFrame(
@@ -218,8 +221,8 @@ class VideoEncoder {
 
     /// Force next frame to be a keyframe
     func requestKeyframe() {
-        // Next encode call should set forceKeyframe = true
-        logger.info("Keyframe requested")
+        pendingKeyframeRequest = true
+        logger.info("Keyframe requested (will force on next encode)")
     }
 
     // MARK: - Output Callback

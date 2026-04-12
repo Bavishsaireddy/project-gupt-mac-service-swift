@@ -1,6 +1,6 @@
 //
 //  InputEventCaptor.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Capture mouse and keyboard events on the client
 //
@@ -16,12 +16,15 @@ protocol InputEventCaptorDelegate: AnyObject {
 
 /// Captures local input events to send to remote host
 class InputEventCaptor {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "InputCaptor")
+    private let logger = Logger(subsystem: "com.gupt", category: "InputCaptor")
     weak var delegate: InputEventCaptorDelegate?
 
     private var isCapturing = false
     private var localMonitor: Any?
     private var globalMonitor: Any?
+
+    /// Track which mouse buttons are currently pressed for drag detection
+    private var pressedButtons: Set<MouseButton> = []
 
     // MARK: - Initialization
 
@@ -42,20 +45,19 @@ class InputEventCaptor {
 
         // Monitor local events (within app window)
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [
-            .mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-            .scrollWheel, .keyDown, .keyUp, .flagsChanged
+            .mouseMoved,
+            .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+            .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+            .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+            .scrollWheel,
+            .keyDown, .keyUp, .flagsChanged
         ]) { [weak self] event in
             self?.handleEvent(event)
             return event  // Pass through to app
         }
 
-        // Monitor global events (system-wide - requires accessibility permission)
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [
-            .mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-            .scrollWheel, .keyDown, .keyUp, .flagsChanged
-        ]) { [weak self] event in
-            self?.handleEvent(event)
-        }
+        // Removed globalMonitor because it captures events outside the app window, leading to weird mouse behavior
+        // globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [ ...
 
         isCapturing = true
         logger.info("Input capture started")
@@ -73,6 +75,7 @@ class InputEventCaptor {
             globalMonitor = nil
         }
 
+        pressedButtons.removeAll()
         isCapturing = false
         logger.info("Input capture stopped")
     }
@@ -80,71 +83,204 @@ class InputEventCaptor {
     // MARK: - Event Handling
 
     private func handleEvent(_ event: NSEvent) {
-        let inputEvent = convertToInputEvent(event)
-        delegate?.captor(self, didCaptureEvent: inputEvent)
+        if let inputEvent = convertToInputEvent(event) {
+            delegate?.captor(self, didCaptureEvent: inputEvent)
+        }
     }
 
-    private func convertToInputEvent(_ event: NSEvent) -> InputEventMessage {
+    private func convertToInputEvent(_ event: NSEvent) -> InputEventMessage? {
+        // Double check the app focuses the correct window for keyboard events
+        if event.type == .keyDown || event.type == .keyUp || event.type == .flagsChanged {
+            guard event.window?.isKeyWindow == true else { return nil }
+        }
+
         let timestamp = UInt64(event.timestamp * 1_000_000)  // Convert to microseconds
 
+        // Convert from window coordinates to the content view's local coordinate system
+        guard let contentView = event.window?.contentView else { return nil }
+        let localPoint = contentView.convert(event.locationInWindow, from: nil)
+        
+        // Critical Fix: ONLY capture mouse events if the pointer is ACTUALLY inside the video bounds!
+        // This prevents clicks on the Mac Dock or the window's title bar from being sent to the Host.
+        if event.type != .keyDown && event.type != .keyUp && event.type != .flagsChanged {
+            if !contentView.bounds.contains(localPoint) {
+                return nil
+            }
+        }
+
+        let width  = contentView.bounds.width
+        let height = contentView.bounds.height
+
+        // Normalize X to 0-1
+        let relX = max(0.0, min(1.0, Double(localPoint.x / width)))
+
+        // Normalize Y to 0-1.
+        let rawRelY: Double
+        if contentView.isFlipped == true {
+            rawRelY = Double(localPoint.y / height)
+        } else {
+            rawRelY = 1.0 - Double(localPoint.y / height)
+        }
+        let relY = max(0.0, min(1.0, rawRelY))
+
+        // Get mouse deltas for smooth movement reconstruction
+        let deltaX = Double(event.deltaX)
+        let deltaY = Double(event.deltaY)
+
         switch event.type {
-        case .mouseMoved, .leftMouseDragged, .rightMouseDragged:
+        case .mouseMoved:
             return InputEventMessage(
                 eventType: .mouseMove,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: Double(event.locationInWindow.x),
-                    y: Double(event.locationInWindow.y),
+                    x: relX,
+                    y: relY,
                     button: nil,
-                    clickCount: nil
+                    clickCount: nil,
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    isDragging: false
+                ))
+            )
+
+        case .leftMouseDragged:
+            return InputEventMessage(
+                eventType: .mouseMove,
+                timestamp: timestamp,
+                eventData: .mouseEvent(MouseEventData(
+                    x: relX,
+                    y: relY,
+                    button: .left,
+                    clickCount: nil,
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    isDragging: true
+                ))
+            )
+
+        case .rightMouseDragged:
+            return InputEventMessage(
+                eventType: .mouseMove,
+                timestamp: timestamp,
+                eventData: .mouseEvent(MouseEventData(
+                    x: relX,
+                    y: relY,
+                    button: .right,
+                    clickCount: nil,
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    isDragging: true
+                ))
+            )
+
+        case .otherMouseDragged:
+            return InputEventMessage(
+                eventType: .mouseMove,
+                timestamp: timestamp,
+                eventData: .mouseEvent(MouseEventData(
+                    x: relX,
+                    y: relY,
+                    button: .middle,
+                    clickCount: nil,
+                    deltaX: deltaX,
+                    deltaY: deltaY,
+                    isDragging: true
                 ))
             )
 
         case .leftMouseDown:
+            pressedButtons.insert(.left)
             return InputEventMessage(
                 eventType: .mouseDown,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: Double(event.locationInWindow.x),
-                    y: Double(event.locationInWindow.y),
+                    x: relX,
+                    y: relY,
                     button: .left,
-                    clickCount: event.clickCount
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
 
         case .leftMouseUp:
+            pressedButtons.remove(.left)
             return InputEventMessage(
                 eventType: .mouseUp,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: Double(event.locationInWindow.x),
-                    y: Double(event.locationInWindow.y),
+                    x: relX,
+                    y: relY,
                     button: .left,
-                    clickCount: event.clickCount
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
 
         case .rightMouseDown:
+            pressedButtons.insert(.right)
             return InputEventMessage(
                 eventType: .mouseDown,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: Double(event.locationInWindow.x),
-                    y: Double(event.locationInWindow.y),
+                    x: relX,
+                    y: relY,
                     button: .right,
-                    clickCount: event.clickCount
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
 
         case .rightMouseUp:
+            pressedButtons.remove(.right)
             return InputEventMessage(
                 eventType: .mouseUp,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: Double(event.locationInWindow.x),
-                    y: Double(event.locationInWindow.y),
+                    x: relX,
+                    y: relY,
                     button: .right,
-                    clickCount: event.clickCount
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
+                ))
+            )
+
+        case .otherMouseDown:
+            pressedButtons.insert(.middle)
+            return InputEventMessage(
+                eventType: .mouseDown,
+                timestamp: timestamp,
+                eventData: .mouseEvent(MouseEventData(
+                    x: relX,
+                    y: relY,
+                    button: .middle,
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
+                ))
+            )
+
+        case .otherMouseUp:
+            pressedButtons.remove(.middle)
+            return InputEventMessage(
+                eventType: .mouseUp,
+                timestamp: timestamp,
+                eventData: .mouseEvent(MouseEventData(
+                    x: relX,
+                    y: relY,
+                    button: .middle,
+                    clickCount: event.clickCount,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
 
@@ -201,7 +337,8 @@ class InputEventCaptor {
                 eventType: .mouseMove,
                 timestamp: timestamp,
                 eventData: .mouseEvent(MouseEventData(
-                    x: 0, y: 0, button: nil, clickCount: nil
+                    x: 0, y: 0, button: nil, clickCount: nil,
+                    deltaX: nil, deltaY: nil, isDragging: nil
                 ))
             )
         }
@@ -277,7 +414,10 @@ extension InputEventCaptor {
                     x: location.x,
                     y: location.y,
                     button: .left,
-                    clickCount: 1
+                    clickCount: 1,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
             self.delegate?.captor(self, didCaptureEvent: event)
@@ -291,7 +431,10 @@ extension InputEventCaptor {
                         x: location.x,
                         y: location.y,
                         button: .left,
-                        clickCount: 1
+                        clickCount: 1,
+                        deltaX: nil,
+                        deltaY: nil,
+                        isDragging: nil
                     ))
                 )
                 self.delegate?.captor(self, didCaptureEvent: upEvent)
@@ -307,7 +450,10 @@ extension InputEventCaptor {
                     x: location.x,
                     y: location.y,
                     button: nil,
-                    clickCount: nil
+                    clickCount: nil,
+                    deltaX: nil,
+                    deltaY: nil,
+                    isDragging: nil
                 ))
             )
             self.delegate?.captor(self, didCaptureEvent: event)

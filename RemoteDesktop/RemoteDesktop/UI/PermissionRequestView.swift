@@ -1,6 +1,6 @@
 //
 //  PermissionRequestView.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  UI to guide users through granting required permissions
 //
@@ -10,7 +10,7 @@ import os.log
 
 /// View to request and monitor system permissions
 struct PermissionRequestView: View {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "PermissionRequestView")
+    private let logger = Logger(subsystem: "com.gupt", category: "PermissionRequestView")
     
     @State private var hasScreenRecording = false
     @State private var hasAccessibility = false
@@ -28,7 +28,7 @@ struct PermissionRequestView: View {
                     .font(.title)
                     .fontWeight(.bold)
                 
-                Text("RemoteDesktop requires screen recording and accessibility permissions to capture your screen and control your input.")
+                Text("GUPT requires screen recording and accessibility permissions to capture your screen and control your input.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)

@@ -10,7 +10,7 @@ import os.log
 
 /// Buffers incoming frames and delivers them in order
 class JitterBuffer {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "JitterBuffer")
+    private let logger = Logger(subsystem: "com.gupt", category: "JitterBuffer")
     
     struct BufferedFrame {
         let sequence: UInt32
@@ -24,7 +24,7 @@ class JitterBuffer {
     private var isWaitingForKeyframe = true
     
     private let maxBufferSize = 30 // Max frames to buffer
-    private let queue = DispatchQueue(label: "com.remotedesktop.jitterbuffer", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.gupt.jitterbuffer", qos: .userInteractive)
     
     /// Add a frame to the buffer
     func addFrame(data: Data, isKeyframe: Bool, sequence: UInt32) {

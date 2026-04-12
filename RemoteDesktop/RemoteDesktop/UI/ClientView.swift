@@ -1,6 +1,6 @@
 //
 //  ClientView.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Main user interface for the client mode
 //
@@ -12,157 +12,338 @@ struct ClientView: View {
     @ObservedObject var controller: ClientController
     @ObservedObject var sessionManager = SessionManager.shared
     
-    @State private var hostIP = ""
-    @State private var hostPort = "5999"
-    @State private var password = ""
+    @State private var roomCode = ""
     @State private var isConnecting = false
     @State private var errorMessage: String?
+    @State private var focusedField: String? = nil
+    @State private var showSettings = false
     
     var body: some View {
-        VStack(spacing: 30) {
-            // Header
-            HStack {
-                Text("Connect to Remote")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Spacer()
-            }
-            
-            Divider()
-            
+        ZStack {
+            // Dark background
+            Color(red: 0.08, green: 0.08, blue: 0.12)
+                .ignoresSafeArea()
+
             if controller.isConnected {
                 // If connected, show the remote display view
                 RemoteDesktopView(controller: controller)
             } else {
                 // If not connected, show the connection form
-                HStack(alignment: .top, spacing: 40) {
-                    
-                    // Connection Form
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Connection Details")
-                            .font(.title2)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Host IP Address").foregroundColor(.secondary)
-                            TextField("192.168.1.100", text: $hostIP)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 300)
+                VStack(spacing: 30) {
+                    // Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Connect to Remote")
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+
+                            Text("Enter the host details to start a session")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white.opacity(0.4))
                         }
                         
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Port").foregroundColor(.secondary)
-                            TextField("5900", text: $hostPort)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 300)
-                        }
+                        Spacer()
                         
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Password").foregroundColor(.secondary)
-                            SecureField("Enter password", text: $password)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 300)
+                        Button(action: { showSettings.toggle() }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(10)
+                                .background(Circle().fill(Color.white.opacity(0.06)))
                         }
-                        
-                        if let error = errorMessage {
-                            Text(error)
-                                .foregroundColor(.red)
-                                .font(.caption)
-                        }
-                        
-                        Button(action: connect) {
-                            if isConnecting {
-                                ProgressView().controlSize(.small).padding(.horizontal, 10)
-                            } else {
-                                Text("Connect")
-                                    .frame(width: 100)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(hostIP.isEmpty || isConnecting)
+                        .buttonStyle(.plain)
                     }
-                    .padding()
-                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(nsColor: .controlBackgroundColor)))
                     
-                    // History Sidebar
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Recent Connections")
-                            .font(.title2)
+                    HStack(alignment: .top, spacing: 30) {
                         
-                        if sessionManager.connectionHistory.isEmpty {
-                            Text("No recent connections")
-                                .foregroundColor(.secondary)
-                                .font(.body)
-                                .padding(.top, 10)
-                        } else {
-                            ScrollView {
-                                VStack(spacing: 10) {
-                                    ForEach(sessionManager.connectionHistory) { entry in
-                                        HistoryRow(entry: entry) {
-                                            self.hostIP = entry.host
-                                            self.hostPort = "\(entry.port)"
+                        // Connection Form
+                        VStack(alignment: .leading, spacing: 22) {
+                            Text("Connection Details")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.85))
+                            
+                            GuptTextField(
+                                label: "Room Code",
+                                placeholder: "123456",
+                                text: $roomCode,
+                                icon: "number"
+                            )
+                            
+                            if let error = errorMessage {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 12))
+                                    Text(error)
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundColor(Color(red: 0.95, green: 0.4, blue: 0.4))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.red.opacity(0.1))
+                                )
+                            }
+                            
+                            Button(action: connect) {
+                                HStack(spacing: 10) {
+                                    if isConnecting {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .tint(.white)
+                                    } else {
+                                        Image(systemName: "link")
+                                            .font(.system(size: 14, weight: .bold))
+                                    }
+                                    Text(isConnecting ? "Connecting..." : "Connect")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .foregroundColor(.white)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(
+                                            roomCode.isEmpty || isConnecting
+                                                ? LinearGradient(colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)], startPoint: .top, endPoint: .bottom)
+                                                : LinearGradient(colors: [Color(red: 0.39, green: 0.40, blue: 0.95), Color(red: 0.30, green: 0.32, blue: 0.85)], startPoint: .top, endPoint: .bottom)
+                                        )
+                                        .shadow(color: roomCode.isEmpty ? .clear : Color(red: 0.39, green: 0.40, blue: 0.95).opacity(0.3), radius: 12, y: 4)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(roomCode.isEmpty || isConnecting)
+                        }
+                        .padding(28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.05), Color.white.opacity(0.02)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                                )
+                        )
+                        .frame(maxWidth: 400)
+                        
+                        // History Sidebar
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white.opacity(0.4))
+                                Text("Recent Connections")
+                                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+                            
+                            if sessionManager.connectionHistory.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "tray")
+                                        .font(.system(size: 28))
+                                        .foregroundColor(.white.opacity(0.2))
+                                    Text("No recent connections")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.3))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 30)
+                            } else {
+                                ScrollView {
+                                    VStack(spacing: 8) {
+                                        ForEach(sessionManager.connectionHistory) { entry in
+                                            GuptHistoryRow(entry: entry) {
+                                                self.roomCode = entry.roomCode
+                                            }
                                         }
                                     }
                                 }
                             }
+                            Spacer()
                         }
-                        Spacer()
+                        .padding(24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.04), Color.white.opacity(0.015)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                                )
+                        )
+                        .frame(width: 280)
                     }
-                    .frame(width: 250)
+                    
+                    Spacer()
                 }
+                .padding(40)
             }
-            
-            Spacer()
         }
-        .padding(40)
+        .sheet(isPresented: $showSettings) {
+             SettingsView()
+        }
     }
     
     // MARK: - Actions
     
     private func connect() {
-        guard let port = UInt16(hostPort) else {
-            errorMessage = "Invalid port number"
-            return
-        }
+        guard !roomCode.isEmpty else { return }
         
         isConnecting = true
         errorMessage = nil
         
         Task {
             do {
-                try await controller.connect(host: hostIP, port: port)
-                sessionManager.addHistoryEntry(host: hostIP, port: port)
-                isConnecting = false
+                try await controller.connect(roomCode: roomCode)
+                
+                DispatchQueue.main.async {
+                    self.isConnecting = false
+                    SessionManager.shared.addHistoryEntry(roomCode: roomCode)
+                }
             } catch {
-                isConnecting = false
-                errorMessage = "Failed to connect: \(error.localizedDescription)"
+                DispatchQueue.main.async {
+                    self.isConnecting = false
+                    self.errorMessage = error.localizedDescription
+                }
             }
+        }
+    }
+    
+    private func fillFromHistory(_ entry: ConnectionEntry) {
+        roomCode = entry.roomCode
+    }
+}
+
+// MARK: - GUPT Styled Components
+
+struct GuptTextField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    let icon: String
+    @State private var isFocused = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.4))
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(width: 18)
+
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+            )
         }
     }
 }
 
-// MARK: - Supporting Views
+struct GuptSecureField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    let icon: String
 
-struct HistoryRow: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.4))
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(width: 18)
+
+                SecureField(placeholder, text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+            )
+        }
+    }
+}
+
+struct GuptHistoryRow: View {
     let entry: ConnectionEntry
     let action: () -> Void
+    @State private var isHovered = false
     
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.host)
-                    .fontWeight(.medium)
-                HStack {
-                    Text("Port: \(entry.port)")
-                    Spacer()
-                    Text(entry.lastConnected, style: .relative)
+            HStack(spacing: 12) {
+                Image(systemName: "display")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.3))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Room: \(entry.roomCode)")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.8))
+                    HStack(spacing: 8) {
+                        Text(entry.lastConnected, style: .relative)
+                            .font(.system(size: 11))
+                        Text("ago")
+                            .font(.system(size: 11))
+                        Spacer()
+                    }
+                    .foregroundColor(.white.opacity(0.35))
                 }
-                .font(.caption)
-                .foregroundColor(.secondary)
             }
-            .padding()
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(isHovered ? 0.06 : 0.03))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(isHovered ? 0.1 : 0.04), lineWidth: 0.5)
+                    )
+            )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }

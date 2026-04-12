@@ -21,7 +21,7 @@ struct CaptureConfiguration: Codable {
         height: Int = 1080,
         frameRate: Int = 30,
         showCursor: Bool = true,
-        scalesToFit: Bool = false,
+        scalesToFit: Bool = true,
         displayID: UInt32? = nil
     ) {
         self.width = width

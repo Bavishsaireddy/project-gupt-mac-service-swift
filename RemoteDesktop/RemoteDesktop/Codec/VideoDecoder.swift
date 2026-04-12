@@ -20,13 +20,13 @@ protocol VideoDecoderDelegate: AnyObject {
 /// H.264 video decoder using VideoToolbox
 class VideoDecoder {
     private var decompressionSession: VTDecompressionSession?
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "VideoDecoder")
+    private let logger = Logger(subsystem: "com.gupt", category: "VideoDecoder")
 
     weak var delegate: VideoDecoderDelegate?
 
     private var formatDescription: CMFormatDescription?
     private var frameCount: Int64 = 0
-    private let queue = DispatchQueue(label: "com.remotedesktop.decoder", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.gupt.decoder", qos: .userInteractive)
 
     // MARK: - Initialization
 

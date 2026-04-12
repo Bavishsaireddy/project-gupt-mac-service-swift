@@ -11,12 +11,12 @@ import os.log
 /// Manages the outgoing stream of video frames
 class FrameStreamer {
     private let connection: NetworkConnection
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "FrameStreamer")
+    private let logger = Logger(subsystem: "com.gupt", category: "FrameStreamer")
     
     private var frameSequence: UInt32 = 0
     private var messageSequence: UInt32 = 0
     
-    private let queue = DispatchQueue(label: "com.remotedesktop.streamer", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.gupt.streamer", qos: .userInteractive)
     
     init(connection: NetworkConnection) {
         self.connection = connection

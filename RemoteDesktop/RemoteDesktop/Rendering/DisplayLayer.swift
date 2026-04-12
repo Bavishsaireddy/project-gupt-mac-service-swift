@@ -12,7 +12,7 @@ import os.log
 
 /// A SwiftUI view that displays a remote video stream
 struct RemoteDisplayView: NSViewRepresentable {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "RemoteDisplayView")
+    private let logger = Logger(subsystem: "com.gupt", category: "RemoteDisplayView")
     
     /// The current pixel buffer to render
     @Binding var currentFrame: CVPixelBuffer?

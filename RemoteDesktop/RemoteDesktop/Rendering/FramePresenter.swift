@@ -12,7 +12,7 @@ import os.log
 
 /// Manages the timing and presentation of video frames
 class FramePresenter {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "FramePresenter")
+    private let logger = Logger(subsystem: "com.gupt", category: "FramePresenter")
     
     private var displayLink: CVDisplayLink?
     private let jitterBuffer: JitterBuffer

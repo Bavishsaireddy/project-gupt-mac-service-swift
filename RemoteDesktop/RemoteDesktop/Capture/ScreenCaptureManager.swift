@@ -21,7 +21,7 @@ protocol ScreenCaptureDelegate: AnyObject {
 class ScreenCaptureManager: NSObject {
     private var stream: SCStream?
     private var configuration: CaptureConfiguration
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "ScreenCapture")
+    private let logger = Logger(subsystem: "com.gupt", category: "ScreenCapture")
 
     weak var delegate: ScreenCaptureDelegate?
 

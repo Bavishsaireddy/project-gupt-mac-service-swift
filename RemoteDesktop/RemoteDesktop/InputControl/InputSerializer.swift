@@ -11,7 +11,7 @@ import os.log
 
 /// Helper class to serialize AppKit events into network protocol messages
 class InputSerializer {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "InputSerializer")
+    private let logger = Logger(subsystem: "com.gupt", category: "InputSerializer")
     
     /// Converts an NSEvent into an InputEventMessage
     /// - Parameters:
@@ -77,7 +77,10 @@ class InputSerializer {
             x: Double(point.x),
             y: Double(point.y),
             button: button,
-            clickCount: clickCount
+            clickCount: clickCount,
+            deltaX: nil,
+            deltaY: nil,
+            isDragging: nil
         )
         return InputEventMessage(eventType: type, timestamp: timestamp, eventData: .mouseEvent(mouseData))
     }

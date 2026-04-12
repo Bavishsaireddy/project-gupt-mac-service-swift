@@ -10,7 +10,7 @@ import os.log
 
 /// Helper functions for network-related tasks
 class NetworkUtils {
-    private static let logger = Logger(subsystem: "com.remotedesktop", category: "NetworkUtils")
+    private static let logger = Logger(subsystem: "com.gupt", category: "NetworkUtils")
     
     /// Get all IPv4 and IPv6 addresses for the current device
     /// - Returns: List of local IP addresses

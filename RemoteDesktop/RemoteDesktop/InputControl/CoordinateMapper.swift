@@ -11,7 +11,7 @@ import os.log
 
 /// Helper class to map coordinates between different screen resolutions
 class CoordinateMapper {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "CoordinateMapper")
+    private let logger = Logger(subsystem: "com.gupt", category: "CoordinateMapper")
     
     private var hostWidth: CGFloat
     private var hostHeight: CGFloat

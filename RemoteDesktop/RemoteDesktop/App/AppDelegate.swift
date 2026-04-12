@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Application delegate for lifecycle management
 //
@@ -9,7 +9,7 @@ import Cocoa
 import os.log
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "AppDelegate")
+    private let logger = Logger(subsystem: "com.gupt", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Application launched")
@@ -65,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch permission {
             case .screenRecording:
-                alert.informativeText = "RemoteDesktop needs Screen Recording permission to capture your screen.\n\nPlease grant access in System Settings > Privacy & Security > Screen Recording"
+                alert.informativeText = "GUPT needs Screen Recording permission to capture your screen.\n\nPlease grant access in System Settings > Privacy & Security > Screen Recording"
                 alert.addButton(withTitle: "Open System Settings")
                 alert.addButton(withTitle: "Later")
 
@@ -75,7 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
             case .accessibility:
-                alert.informativeText = "RemoteDesktop needs Accessibility permission to control mouse and keyboard remotely.\n\nPlease grant access in System Settings > Privacy & Security > Accessibility"
+                alert.informativeText = "GUPT needs Accessibility permission to control mouse and keyboard remotely.\n\nPlease grant access in System Settings > Privacy & Security > Accessibility"
                 alert.addButton(withTitle: "Open System Settings")
                 alert.addButton(withTitle: "Later")
 
@@ -143,12 +143,12 @@ extension AppDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
 
-        appMenu.addItem(NSMenuItem(title: "About RemoteDesktop", action: #selector(showAbout), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "About GUPT", action: #selector(showAbout), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(NSMenuItem(title: "Preferences...", action: #selector(openPreferences), keyEquivalent: ","))
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide RemoteDesktop", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
-        appMenu.addItem(NSMenuItem(title: "Quit RemoteDesktop", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Hide GUPT", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
+        appMenu.addItem(NSMenuItem(title: "Quit GUPT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)

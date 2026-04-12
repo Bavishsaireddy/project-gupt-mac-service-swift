@@ -1,6 +1,6 @@
 //
 //  RemoteDesktopApp.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Main application entry point
 //
@@ -25,7 +25,7 @@ struct RemoteDesktopApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About RemoteDesktop") {
+                Button("About GUPT") {
                     NSApplication.shared.orderFrontStandardAboutPanel()
                 }
             }
@@ -68,7 +68,7 @@ struct ContentView: View {
                 })
             }
         }
-        .animation(.easeInOut, value: selectedMode)
+        .animation(.easeInOut(duration: 0.3), value: selectedMode)
     }
 }
 
@@ -82,15 +82,28 @@ struct HostContainerView: View {
         VStack(spacing: 0) {
             HStack {
                 Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                    Text("Back to Selection")
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
                 }
                 .buttonStyle(.plain)
                 .padding()
                 
                 Spacer()
+                
+                Text("GUPT")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.trailing, 16)
             }
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
             
             HostView(controller: hostController)
         }
@@ -106,15 +119,28 @@ struct ClientContainerView: View {
             if !clientController.isConnected {
                 HStack {
                     Button(action: onBack) {
-                        Image(systemName: "chevron.left")
-                        Text("Back to Selection")
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.white.opacity(0.1)))
                     }
                     .buttonStyle(.plain)
                     .padding()
                     
                     Spacer()
+                    
+                    Text("GUPT")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.trailing, 16)
                 }
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(Color(red: 0.08, green: 0.08, blue: 0.12))
             }
             
             ClientView(controller: clientController)
@@ -126,67 +152,120 @@ struct ClientContainerView: View {
 
 struct ModeSelectionView: View {
     @Binding var selectedMode: ContentView.AppMode
+    @State private var glowPhase: Double = 0
 
     var body: some View {
-        VStack(spacing: 60) {
-            VStack(spacing: 10) {
-                Text("RemoteDesktop")
-                    .font(.system(size: 56, weight: .black, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+        ZStack {
+            // Deep dark gradient background
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.05, blue: 0.10),
+                    Color(red: 0.08, green: 0.06, blue: 0.14),
+                    Color(red: 0.06, green: 0.08, blue: 0.12)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            // Subtle animated orbs in the background
+            GeometryReader { geo in
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(red: 0.05, green: 0.58, blue: 0.53).opacity(0.15), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 200
                         )
                     )
+                    .frame(width: 400, height: 400)
+                    .offset(x: geo.size.width * 0.6, y: geo.size.height * 0.15)
+                    .blur(radius: 60)
 
-                Text("Professional bridge for your workspaces")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(red: 0.39, green: 0.40, blue: 0.95).opacity(0.12), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 200
+                        )
+                    )
+                    .frame(width: 350, height: 350)
+                    .offset(x: geo.size.width * 0.1, y: geo.size.height * 0.55)
+                    .blur(radius: 50)
             }
 
-            HStack(spacing: 50) {
-                ModeButton(
-                    title: "Host",
-                    subtitle: "Share this Mac's screen",
-                    icon: "desktopcomputer",
-                    color: .blue
-                ) {
-                    selectedMode = .host
+            VStack(spacing: 50) {
+                Spacer()
+                    .frame(height: 20)
+
+                // GUPT Title with glow
+                VStack(spacing: 12) {
+                    Text("GUPT")
+                        .font(.system(size: 64, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.05, green: 0.75, blue: 0.65),
+                                    Color(red: 0.39, green: 0.40, blue: 0.95)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: Color(red: 0.05, green: 0.75, blue: 0.65).opacity(0.3), radius: 20, x: 0, y: 0)
+
+                    Text("Secure bridge for your workspaces")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.5))
                 }
 
-                ModeButton(
-                    title: "Client",
-                    subtitle: "Control a remote Mac",
-                    icon: "rectangle.connected.to.line.below",
-                    color: .purple
-                ) {
-                    selectedMode = .client
-                }
-            }
+                // Mode selection cards
+                HStack(spacing: 40) {
+                    GuptModeButton(
+                        title: "Host",
+                        subtitle: "Share this Mac's screen",
+                        icon: "desktopcomputer",
+                        accentColor: Color(red: 0.05, green: 0.58, blue: 0.53)  // Teal
+                    ) {
+                        selectedMode = .host
+                    }
 
-            Spacer()
-                .frame(height: 20)
-            
-            // Permission Quick Status
-            HStack(spacing: 30) {
-                PermissionBadge(title: "Capture", isGranted: CGPreflightScreenCaptureAccess())
-                PermissionBadge(title: "Control", isGranted: AXIsProcessTrusted())
+                    GuptModeButton(
+                        title: "Client",
+                        subtitle: "Control a remote Mac",
+                        icon: "rectangle.connected.to.line.below",
+                        accentColor: Color(red: 0.39, green: 0.40, blue: 0.95)  // Indigo
+                    ) {
+                        selectedMode = .client
+                    }
+                }
+
+                Spacer()
+                    .frame(height: 10)
+                
+                // Permission Quick Status
+                HStack(spacing: 24) {
+                    GuptPermissionBadge(title: "Screen Capture", isGranted: CGPreflightScreenCaptureAccess())
+                    GuptPermissionBadge(title: "Accessibility", isGranted: AXIsProcessTrusted())
+                }
+                .padding(.bottom, 30)
             }
-            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(50)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(60)
     }
 }
 
-// MARK: - Shared Components
+// MARK: - GUPT Mode Button
 
-struct ModeButton: View {
+struct GuptModeButton: View {
     let title: String
     let subtitle: String
     let icon: String
-    let color: Color
+    let accentColor: Color
     let action: () -> Void
 
     @State private var isHovered = false
@@ -195,38 +274,59 @@ struct ModeButton: View {
         Button(action: action) {
             VStack(spacing: 24) {
                 ZStack {
+                    // Glow ring
                     Circle()
-                        .fill(color.opacity(0.1))
+                        .fill(accentColor.opacity(isHovered ? 0.2 : 0.08))
                         .frame(width: 100, height: 100)
+                        .shadow(color: accentColor.opacity(isHovered ? 0.4 : 0.0), radius: 20)
                     
                     Image(systemName: icon)
-                        .font(.system(size: 44, weight: .medium))
-                        .foregroundColor(color)
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundColor(accentColor)
                 }
 
                 VStack(spacing: 8) {
                     Text(title)
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
 
                     Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
                         .multilineTextAlignment(.center)
                 }
             }
-            .frame(width: 280, height: 280)
+            .frame(width: 260, height: 260)
             .background(
                 RoundedRectangle(cornerRadius: 24)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .shadow(color: isHovered ? color.opacity(0.2) : Color.black.opacity(0.05),
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(isHovered ? 0.08 : 0.04),
+                                Color.white.opacity(isHovered ? 0.04 : 0.02)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: isHovered ? accentColor.opacity(0.2) : Color.black.opacity(0.3),
                            radius: isHovered ? 30 : 15, x: 0, y: 10)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24)
-                    .stroke(isHovered ? color.opacity(0.5) : Color.clear, lineWidth: 2)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                isHovered ? accentColor.opacity(0.6) : Color.white.opacity(0.08),
+                                isHovered ? accentColor.opacity(0.2) : Color.white.opacity(0.03)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             )
-            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .scaleEffect(isHovered ? 1.03 : 1.0)
             .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isHovered)
         }
         .buttonStyle(.plain)
@@ -236,25 +336,29 @@ struct ModeButton: View {
     }
 }
 
-struct PermissionBadge: View {
+// MARK: - GUPT Permission Badge
+
+struct GuptPermissionBadge: View {
     let title: String
     let isGranted: Bool
     
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Circle()
-                .fill(isGranted ? Color.green : Color.orange)
-                .frame(width: 8, height: 8)
+                .fill(isGranted ? Color(red: 0.2, green: 0.8, blue: 0.4) : Color.orange)
+                .frame(width: 7, height: 7)
+                .shadow(color: isGranted ? Color.green.opacity(0.5) : Color.orange.opacity(0.5), radius: 4)
             
             Text(title)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color.secondary.opacity(0.1)))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.06))
+                .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+        )
     }
 }
-
-

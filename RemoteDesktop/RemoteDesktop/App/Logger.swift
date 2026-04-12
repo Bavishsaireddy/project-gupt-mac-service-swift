@@ -12,7 +12,7 @@ import os.log
 class AppLogger {
     static let shared = AppLogger()
     
-    private let subsystem = "com.remotedesktop"
+    private let subsystem = "com.gupt"
     
     /// Create a logger for a specific category
     func logger(for category: String) -> Logger {

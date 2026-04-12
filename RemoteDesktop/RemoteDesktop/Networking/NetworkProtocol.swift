@@ -1,6 +1,6 @@
 //
 //  NetworkProtocol.swift
-//  RemoteDesktop
+//  GUPT
 //
 //  Network message protocol definitions
 //
@@ -17,6 +17,7 @@ enum MessageType: UInt8, Codable {
     case keepAlive = 0x06       // Connection health check
     case disconnect = 0x07      // Clean disconnect
     case ack = 0x08             // Acknowledgment
+    case clipboard = 0x09       // Clipboard sync
 }
 
 /// Network message with header and payload
@@ -172,6 +173,9 @@ struct MouseEventData: Codable {
     let y: Double
     let button: MouseButton?
     let clickCount: Int?
+    let deltaX: Double?
+    let deltaY: Double?
+    let isDragging: Bool?
 }
 
 struct KeyEventData: Codable {
@@ -230,6 +234,13 @@ struct KeepAliveMessage: Codable {
 
 struct DisconnectMessage: Codable {
     let reason: String
+}
+
+// MARK: - Clipboard Message
+
+struct ClipboardMessage: Codable {
+    let text: String
+    let timestamp: UInt64
 }
 
 // MARK: - Message Size Constants

@@ -22,7 +22,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     private var textureCache: CVMetalTextureCache?
     private var renderPipeline: MTLRenderPipelineState?
 
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "MetalRenderer")
+    private let logger = Logger(subsystem: "com.gupt", category: "MetalRenderer")
 
     private var currentPixelBuffer: CVPixelBuffer?
     private let semaphore = DispatchSemaphore(value: 3) // Triple buffering
@@ -94,7 +94,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             renderPipeline = try device.makeRenderPipelineState(descriptor: desc)
         } catch {
             // Log but don't crash — draw(in:) will be a no-op if pipeline is nil
-            Logger(subsystem: "com.remotedesktop", category: "MetalRenderer")
+            Logger(subsystem: "com.gupt", category: "MetalRenderer")
                 .error("Failed to build render pipeline: \(error.localizedDescription)")
             return nil
         }

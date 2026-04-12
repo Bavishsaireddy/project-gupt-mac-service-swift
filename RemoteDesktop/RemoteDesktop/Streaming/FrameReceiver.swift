@@ -16,12 +16,12 @@ protocol FrameReceiverDelegate: AnyObject {
 /// Manages incoming video frames from the network
 class FrameReceiver {
     private let connection: NetworkConnection
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "FrameReceiver")
+    private let logger = Logger(subsystem: "com.gupt", category: "FrameReceiver")
     
     weak var delegate: FrameReceiverDelegate?
     
     private var lastReceivedSequence: UInt32 = 0
-    private let queue = DispatchQueue(label: "com.remotedesktop.receiver", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.gupt.receiver", qos: .userInteractive)
     
     init(connection: NetworkConnection) {
         self.connection = connection

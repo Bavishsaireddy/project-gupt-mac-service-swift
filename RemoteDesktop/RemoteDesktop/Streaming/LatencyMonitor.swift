@@ -11,7 +11,7 @@ import os.log
 /// Tracks and calculates video stream performance metrics
 class LatencyMonitor {
     static let shared = LatencyMonitor()
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "LatencyMonitor")
+    private let logger = Logger(subsystem: "com.gupt", category: "LatencyMonitor")
     
     struct Metrics {
         var captureLatency: Double = 0      // ms
@@ -29,7 +29,7 @@ class LatencyMonitor {
     private var frameCount = 0
     private var lastFPSUpdate = Date()
     
-    private let queue = DispatchQueue(label: "com.remotedesktop.latencymonitor", qos: .utility)
+    private let queue = DispatchQueue(label: "com.gupt.latencymonitor", qos: .utility)
     
     // MARK: - Metrics Collection
     

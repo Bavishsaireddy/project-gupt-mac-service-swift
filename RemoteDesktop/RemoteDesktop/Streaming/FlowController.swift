@@ -16,7 +16,7 @@ protocol FlowControllerDelegate: AnyObject {
 
 /// Manages network congestion and quality adaptation
 class FlowController {
-    private let logger = Logger(subsystem: "com.remotedesktop", category: "FlowController")
+    private let logger = Logger(subsystem: "com.gupt", category: "FlowController")
     
     weak var delegate: FlowControllerDelegate?
     
@@ -26,7 +26,7 @@ class FlowController {
     private var rttHistory: [Double] = []
     private var lossHistory: [Bool] = []
     
-    private let queue = DispatchQueue(label: "com.remotedesktop.flowcontroller", qos: .utility)
+    private let queue = DispatchQueue(label: "com.gupt.flowcontroller", qos: .utility)
     
     // MARK: - Metrics Update
     
