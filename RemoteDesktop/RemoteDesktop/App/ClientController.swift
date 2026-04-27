@@ -25,7 +25,10 @@ class ClientController: NSObject, ObservableObject {
     private let decoder: VideoDecoder
     private let inputCaptor = InputEventCaptor()
     private let clipboardManager = ClipboardManager()
-    
+
+    // Continuation to bridge async connect() with the delegate callback
+    private var connectContinuation: CheckedContinuation<Void, Error>?
+
     // Mouse throttle: send at most every 16ms (~60Hz)
     private var lastMouseSendTime: CFTimeInterval = 0
     private var pendingMouseEvent: InputEventMessage?
@@ -43,7 +46,8 @@ class ClientController: NSObject, ObservableObject {
     
     // MARK: - Session Management
     
-    /// Connect to a remote host using a room code
+    /// Connect to a remote host using a room code.
+    /// Awaits the WebSocket handshake and throws if it fails.
     func connect(roomCode: String) async throws {
         let safeRoomCode = roomCode.trimmingCharacters(in: .whitespacesAndNewlines)
         let serverURLString = SessionManager.shared.relayServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -52,16 +56,20 @@ class ClientController: NSObject, ObservableObject {
             logger.error("Invalid relay server URL")
             throw URLError(.badURL)
         }
-        
+
         logger.info("Connecting Client to URL: \(url.absoluteString)")
 
-        let newConnection = NetworkConnection(url: url)
-        self.connection = newConnection
-        newConnection.delegate = self
-        newConnection.start()
-        inputCaptor.startCapturing()
+        // Await the actual WebSocket open (or failure) before returning
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            self.connectContinuation = continuation
+            let newConnection = NetworkConnection(url: url)
+            self.connection = newConnection
+            newConnection.delegate = self
+            newConnection.start()
+        }
 
-        logger.info("ClientController connecting to room: \(roomCode)")
+        inputCaptor.startCapturing()
+        logger.info("ClientController connected to room: \(roomCode)")
     }
     
     /// Disconnect from the current host
@@ -201,32 +209,45 @@ extension ClientController: VideoDecoderDelegate {
 
 extension ClientController: NetworkConnectionDelegate {
     func connection(_ connection: NetworkConnection, didChangeState state: ConnectionState) {
-        DispatchQueue.main.async {
-            switch state {
-            case .connected:
+        switch state {
+        case .connected:
+            // Resume the connect() continuation successfully
+            connectContinuation?.resume(returning: ())
+            connectContinuation = nil
+
+            DispatchQueue.main.async {
                 self.isConnected = true
                 self.logger.info("Connection is ready — waiting for frames")
-                // Start clipboard sync now that network is ready
                 if self.clipboardSyncEnabled {
                     self.clipboardManager.startMonitoring()
                 }
-                
-                // Send a handshake immediately to force the host to generate an I-frame
-                Task {
-                    let handshake = HandshakeMessage(version: "1.0", deviceName: "Client", capabilities: HandshakeMessage.Capabilities(maxResolution: HandshakeMessage.Resolution(width: 1920, height: 1080), supportedCodecs: ["H264"], maxFrameRate: 60))
-                    if let data = try? JSONEncoder().encode(handshake) {
-                        let msg = NetworkMessage(type: .handshake, sequenceNumber: 0, timestamp: NetworkMessage.currentTimestamp(), payload: data)
-                        try? await connection.send(msg)
-                    }
+            }
+
+            // Send a handshake immediately to force the host to generate an I-frame
+            Task {
+                let handshake = HandshakeMessage(version: "1.0", deviceName: "Client", capabilities: HandshakeMessage.Capabilities(maxResolution: HandshakeMessage.Resolution(width: 1920, height: 1080), supportedCodecs: ["H264"], maxFrameRate: 60))
+                if let data = try? JSONEncoder().encode(handshake) {
+                    let msg = NetworkMessage(type: .handshake, sequenceNumber: 0, timestamp: NetworkMessage.currentTimestamp(), payload: data)
+                    try? await connection.send(msg)
                 }
-            case .disconnected:
-                self.isConnected = false
-            case .failed(let error):
+            }
+
+        case .disconnected:
+            DispatchQueue.main.async { self.isConnected = false }
+
+        case .failed(let error):
+            // Resume the connect() continuation with the error so the UI can show it
+            if let cont = connectContinuation {
+                connectContinuation = nil
+                cont.resume(throwing: error)
+            }
+            DispatchQueue.main.async {
                 self.isConnected = false
                 self.logger.error("Connection failed: \(error.localizedDescription)")
-            default:
-                break
             }
+
+        default:
+            break
         }
     }
     

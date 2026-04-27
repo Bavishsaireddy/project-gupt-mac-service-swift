@@ -37,7 +37,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Relay Server URL")
                         Spacer()
-                        TextField("ws://localhost:3000", text: Binding(
+                        TextField("ws://localhost:3900", text: Binding(
                             get: { SessionManager.shared.relayServerURL },
                             set: { SessionManager.shared.updateRelayServer($0) }
                         ))
